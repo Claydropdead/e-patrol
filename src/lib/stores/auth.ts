@@ -1,0 +1,166 @@
+import { create } from 'zustand'
+import { createClient } from '@/lib/supabase/client'
+import type { User } from '@supabase/supabase-js'
+import type { AdminAccount, Personnel } from '@/lib/types/database'
+
+interface AuthState {
+  user: User | null
+  adminAccount: AdminAccount | null
+  personnel: Personnel | null
+  userType: 'admin' | 'personnel' | null
+  loading: boolean
+  error: string | null
+  
+  // Actions
+  initialize: () => Promise<void>
+  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
+  signOut: () => Promise<void>
+  fetchUserProfile: () => Promise<void>
+}
+
+export const useAuthStore = create<AuthState>((set, get) => ({
+  user: null,
+  adminAccount: null,
+  personnel: null,
+  userType: null,
+  loading: true,
+  error: null,
+
+  initialize: async () => {
+    try {
+      set({ loading: true, error: null })
+      const supabase = createClient()
+      
+      // Get initial session
+      const { data: { session }, error } = await supabase.auth.getSession()
+      if (error) throw error
+      
+      if (session?.user) {
+        set({ user: session.user })
+        await get().fetchUserProfile()
+      }
+      
+      // Listen for auth changes
+      supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user) {
+          set({ user: session.user })
+          await get().fetchUserProfile()
+        } else {
+          set({ user: null, adminAccount: null, personnel: null, userType: null })
+        }
+      })
+      
+      set({ loading: false })
+    } catch (error) {
+      set({ error: (error as Error).message, loading: false })
+    }
+  },
+
+  signIn: async (email: string, password: string) => {
+    try {
+      set({ loading: true, error: null })
+      const supabase = createClient()
+      
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      })
+      
+      if (error) throw error
+      
+      if (data.user) {
+        set({ user: data.user })
+        await get().fetchUserProfile()
+      }
+      
+      set({ loading: false })
+      return { success: true }
+    } catch (error) {
+      const errorMessage = (error as Error).message
+      set({ error: errorMessage, loading: false })
+      return { success: false, error: errorMessage }
+    }
+  },
+
+  signOut: async () => {
+    try {
+      set({ loading: true, error: null })
+      const supabase = createClient()
+      
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
+      
+      set({ 
+        user: null, 
+        adminAccount: null, 
+        personnel: null, 
+        userType: null,
+        loading: false 
+      })
+    } catch (error) {
+      set({ error: (error as Error).message, loading: false })
+    }
+  },
+
+  fetchUserProfile: async () => {
+    try {
+      const { user } = get()
+      if (!user) return
+      
+      const supabase = createClient()
+      
+      // First check if user is an admin
+      const { data: adminData, error: adminError } = await supabase
+        .from('admin_accounts')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+      
+      if (adminData && !adminError) {
+        set({ 
+          adminAccount: adminData, 
+          personnel: null, 
+          userType: 'admin',
+          error: null 
+        })
+        return
+      }
+      
+      // Then check if user is personnel
+      const { data: personnelData, error: personnelError } = await supabase
+        .from('personnel')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+      
+      if (personnelData && !personnelError) {
+        set({ 
+          adminAccount: null, 
+          personnel: personnelData, 
+          userType: 'personnel',
+          error: null 
+        })
+        return
+      }
+      
+      // No profile found - this could be a new user
+      if (adminError?.code === 'PGRST116' && personnelError?.code === 'PGRST116') {
+        set({ 
+          adminAccount: null, 
+          personnel: null, 
+          userType: null,
+          error: null 
+        })
+        return
+      }
+      
+      // Some other error occurred
+      console.error('Error fetching user profile:', adminError || personnelError)
+      set({ error: 'Error fetching user profile' })
+      
+    } catch (error) {
+      console.error('Error in fetchUserProfile:', error)
+      set({ error: (error as Error).message })
+    }
+  }
+}))
