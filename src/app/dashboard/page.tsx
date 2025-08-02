@@ -34,6 +34,30 @@ export default function DashboardPage() {
     return null
   }
 
+  // SECURITY: Handle users without proper profiles
+  if (userType === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center space-y-4 max-w-md">
+          <div className="text-red-600 text-6xl">⚠️</div>
+          <h1 className="text-2xl font-bold text-gray-900">Access Denied</h1>
+          <p className="text-gray-600">
+            Your account exists but no authorized profile has been assigned.
+          </p>
+          <p className="text-sm text-gray-500">
+            This is a security measure. Please contact your system administrator.
+          </p>
+          <button 
+            onClick={() => useAuthStore.getState().signOut()}
+            className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // Redirect personnel to a different page or show limited access
   if (userType === 'personnel') {
     return (
@@ -52,7 +76,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50/30">
       <DashboardHeader />
       <div className="flex">
         <DashboardSidebar 
@@ -61,8 +85,10 @@ export default function DashboardPage() {
           activeTab={activeTab}
           onTabChange={setActiveTab}
         />
-        <main className="flex-1 p-6">
-          <DashboardContent activeTab={activeTab} />
+        <main className="flex-1 p-6 overflow-auto">
+          <div className="max-w-7xl mx-auto">
+            <DashboardContent activeTab={activeTab} />
+          </div>
         </main>
       </div>
     </div>

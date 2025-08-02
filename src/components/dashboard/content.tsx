@@ -4,6 +4,8 @@ import { useAuthStore } from '@/lib/stores/auth'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { AdminCreationForm } from './admin-creation-form'
 import { PersonnelCreationForm } from './personnel-creation-form'
+import { ManageUsers } from './manage-users'
+import { AuditLogsViewer } from './audit-logs-viewer'
 import { Badge } from '@/components/ui/badge'
 import { Users, Shield, MapPin, BarChart3 } from 'lucide-react'
 
@@ -55,27 +57,7 @@ export function DashboardContent({ activeTab }: DashboardContentProps) {
 
   // Manage Users Page
   if (activeTab === 'manage-users') {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Manage Users</h1>
-          <p className="text-gray-600 mt-2">View and manage all admin accounts and personnel</p>
-        </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>User Management</CardTitle>
-            <CardDescription>
-              This section will contain user lists, edit capabilities, and role management
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Coming soon: User list with search, filter, edit, and deactivation features.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    )
+    return <ManageUsers />
   }
 
   // Live Monitoring Page
@@ -132,6 +114,11 @@ export function DashboardContent({ activeTab }: DashboardContentProps) {
         </Card>
       </div>
     )
+  }
+
+  // Audit Logs Page (Superadmin only)
+  if (activeTab === 'audit-logs') {
+    return <AuditLogsViewer />
   }
 
   // Settings Page
@@ -287,18 +274,19 @@ function DashboardOverview() {
     )
   }
 
-  // Fallback for users without proper profile
+  // SECURITY: This should never be reached due to checks in dashboard page
+  // If we get here, there's a security issue
   return (
-    <Card>
+    <Card className="border-red-200 bg-red-50">
       <CardHeader>
-        <CardTitle>Profile Setup Required</CardTitle>
-        <CardDescription>
-          Your account exists but no profile has been created yet.
+        <CardTitle className="text-red-800">Unauthorized Access</CardTitle>
+        <CardDescription className="text-red-600">
+          Security violation detected. Access denied.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <p className="text-sm text-muted-foreground">
-          Please contact your administrator to set up your profile.
+        <p className="text-sm text-red-700">
+          This incident has been logged. Please contact system administrator.
         </p>
       </CardContent>
     </Card>

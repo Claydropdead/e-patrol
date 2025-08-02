@@ -15,7 +15,43 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const { rank, fullName, email, password, role, isActive } = await request.json()
+    // SECURITY: Verify the requesting user is an authorized superadmin
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: 'Unauthorized - No authentication token' },
+        { status: 401 }
+      )
+    }
+
+    // Extract token and verify with Supabase
+    const token = authHeader.replace('Bearer ', '')
+    const { data: tokenUser, error: tokenError } = await supabaseAdmin.auth.getUser(token)
+    
+    if (tokenError || !tokenUser.user) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Invalid token' },
+        { status: 401 }
+      )
+    }
+
+    // Verify the user is an active superadmin
+    const { data: adminCheck, error: adminError } = await supabaseAdmin
+      .from('admin_accounts')
+      .select('role, is_active')
+      .eq('id', tokenUser.user.id)
+      .eq('role', 'superadmin')
+      .eq('is_active', true)
+      .single()
+
+    if (adminError || !adminCheck) {
+      return NextResponse.json(
+        { error: 'Forbidden - Insufficient privileges' },
+        { status: 403 }
+      )
+    }
+
+    const { rank, fullName, email, password, role, isActive, assignedProvince, assignedUnit, assignedSubUnit } = await request.json()
 
     // Validate required fields
     if (!rank || !fullName || !email || !password || !role) {
@@ -32,6 +68,22 @@ export async function POST(request: NextRequest) {
         { error: 'Invalid role specified' },
         { status: 400 }
       )
+    }
+
+    // SECURITY: Prevent creating multiple superadmins without explicit approval
+    if (role === 'superadmin') {
+      const { data: existingSuperadmins } = await supabaseAdmin
+        .from('admin_accounts')
+        .select('id')
+        .eq('role', 'superadmin')
+        .eq('is_active', true)
+
+      if (existingSuperadmins && existingSuperadmins.length >= 2) {
+        return NextResponse.json(
+          { error: 'Maximum number of active superadmins reached. Contact system administrator.' },
+          { status: 400 }
+        )
+      }
     }
 
     // Create auth user
@@ -58,7 +110,10 @@ export async function POST(request: NextRequest) {
           full_name: fullName,
           email,
           role,
-          is_active: isActive ?? true
+          is_active: isActive ?? true,
+          assigned_province: assignedProvince || null,
+          assigned_unit: assignedUnit || null,
+          assigned_sub_unit: assignedSubUnit || null
         })
 
       if (profileError) {

@@ -18,7 +18,10 @@ export function AdminCreationForm() {
     email: '',
     password: '',
     role: '' as AdminRole | '',
-    isActive: true
+    isActive: true,
+    assignedProvince: '',
+    assignedUnit: '',
+    assignedSubUnit: ''
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -41,7 +44,10 @@ export function AdminCreationForm() {
           email: formData.email,
           password: formData.password,
           role: formData.role,
-          isActive: formData.isActive
+          isActive: formData.isActive,
+          assignedProvince: formData.assignedProvince,
+          assignedUnit: formData.assignedUnit,
+          assignedSubUnit: formData.assignedSubUnit
         })
       })
 
@@ -60,7 +66,10 @@ export function AdminCreationForm() {
         email: '',
         password: '',
         role: '' as AdminRole | '',
-        isActive: true
+        isActive: true,
+        assignedProvince: '',
+        assignedUnit: '',
+        assignedSubUnit: ''
       })
 
     } catch (error) {
@@ -159,6 +168,48 @@ export function AdminCreationForm() {
               <Label htmlFor="isActive">Active Account</Label>
             </div>
           </div>
+
+          {/* Assignment Fields - Show only for Provincial and Station roles */}
+          {(formData.role === 'provincial' || formData.role === 'station') && (
+            <div className="border-t pt-4">
+              <h3 className="text-sm font-medium text-gray-900 mb-3">Assignment Information</h3>
+              
+              {formData.role === 'provincial' && (
+                <div>
+                  <Label htmlFor="assignedProvince">Assigned Province</Label>
+                  <Select value={formData.assignedProvince} onValueChange={(value) => setFormData({ ...formData, assignedProvince: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select assigned province" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Oriental Mindoro PPO">Oriental Mindoro PPO</SelectItem>
+                      <SelectItem value="Occidental Mindoro PPO">Occidental Mindoro PPO</SelectItem>
+                      <SelectItem value="Marinduque PPO">Marinduque PPO</SelectItem>
+                      <SelectItem value="Romblon PPO">Romblon PPO</SelectItem>
+                      <SelectItem value="Palawan PPO">Palawan PPO</SelectItem>
+                      <SelectItem value="Puerto Princesa CPO">Puerto Princesa CPO</SelectItem>
+                      <SelectItem value="RMFB">RMFB</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {formData.role === 'station' && (
+                <div>
+                  <Label htmlFor="assignedSubUnit">Assigned Sub-Unit</Label>
+                  <Input
+                    id="assignedSubUnit"
+                    value={formData.assignedSubUnit}
+                    onChange={(e) => setFormData({ ...formData, assignedSubUnit: e.target.value })}
+                    placeholder="e.g. Calapan CPS - Investigation Unit"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Enter the specific sub-unit this admin will manage
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           <Button type="submit" disabled={loading} className="w-full">
             {loading ? 'Creating...' : 'Create Admin Account'}

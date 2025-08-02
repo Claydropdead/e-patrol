@@ -143,8 +143,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return
       }
       
-      // No profile found - this could be a new user
+      // Handle RLS policy errors (user might have profile but RLS blocks access)
       if (adminError?.code === 'PGRST116' && personnelError?.code === 'PGRST116') {
+        // No records found - user has no profile
         set({ 
           adminAccount: null, 
           personnel: null, 
@@ -154,8 +155,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return
       }
       
+      // Handle other RLS-related errors
+      if (adminError?.code === '42501' || personnelError?.code === '42501') {
+        // Permission denied - likely RLS policy issue
+        console.error('RLS Policy Error - User might have inactive profile')
+        set({ 
+          adminAccount: null, 
+          personnel: null, 
+          userType: null,
+          error: 'Account access restricted. Please contact administrator.' 
+        })
+        return
+      }
+      
       // Some other error occurred
-      console.error('Error fetching user profile:', adminError || personnelError)
+      console.error('Error fetching user profile:', {
+        adminError,
+        personnelError,
+        userEmail: user.email,
+        userId: user.id
+      })
       set({ error: 'Error fetching user profile' })
       
     } catch (error) {
