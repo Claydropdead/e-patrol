@@ -1,15 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { RefreshCw, Search, Shield, Activity, Trash2, BarChart3 } from 'lucide-react'
+import { RefreshCw, Activity } from 'lucide-react'
 
 interface AuditEntry {
   event_time: string
@@ -30,8 +27,8 @@ export function AuditLogsViewer() {
   const [stats, setStats] = useState<AuditStats | null>(null)
   const [loading, setLoading] = useState(false)
   const [filters, setFilters] = useState({
-    table: '',
-    operation: '',
+    table: 'all',
+    operation: 'all',
     userId: '',
     page: 1
   })
@@ -52,8 +49,8 @@ export function AuditLogsViewer() {
         limit: '50'
       })
 
-      if (filters.table) params.append('table', filters.table)
-      if (filters.operation) params.append('operation', filters.operation)
+      if (filters.table && filters.table !== 'all') params.append('table', filters.table)
+      if (filters.operation && filters.operation !== 'all') params.append('operation', filters.operation)
       if (filters.userId) params.append('userId', filters.userId)
 
       const response = await fetch(`/api/audit?${params}`, {
@@ -101,52 +98,19 @@ export function AuditLogsViewer() {
     }
   }
 
-  const cleanupOldLogs = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        toast.error('Authentication required')
-        return
-      }
-
-      const response = await fetch('/api/audit', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ action: 'cleanup' })
-      })
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to cleanup logs')
-      }
-
-      toast.success(result.message)
-      fetchStats() // Refresh stats
-    } catch (error) {
-      console.error('Error cleaning up logs:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to cleanup logs')
-    }
-  }
-
   const getOperationBadge = (operation: string) => {
-    switch (operation) {
-      case 'INSERT':
-        return <Badge className="bg-green-100 text-green-800">Created</Badge>
-      case 'UPDATE':
-        return <Badge className="bg-blue-100 text-blue-800">Updated</Badge>
-      case 'DELETE':
-        return <Badge className="bg-red-100 text-red-800">Deleted</Badge>
-      default:
-        return <Badge variant="secondary">{operation}</Badge>
+    const styles = {
+      INSERT: 'bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full',
+      UPDATE: 'bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full',
+      DELETE: 'bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full'
     }
-  }
-
-  const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString()
+    const labels = { INSERT: 'Created', UPDATE: 'Updated', DELETE: 'Deleted' }
+    
+    return (
+      <span className={styles[operation as keyof typeof styles] || 'bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full'}>
+        {labels[operation as keyof typeof labels] || operation}
+      </span>
+    )
   }
 
   useEffect(() => {
@@ -155,175 +119,149 @@ export function AuditLogsViewer() {
   }, [filters])
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-4">
+      {/* Simplified Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Audit Logs</h1>
-          <p className="text-gray-600 mt-1">Monitor all system activities and changes</p>
+          <h1 className="text-xl font-bold text-gray-900">Audit Logs</h1>
+          <p className="text-sm text-gray-600">System activity monitoring</p>
         </div>
         <div className="flex items-center space-x-2">
-          <Button onClick={cleanupOldLogs} variant="outline" size="sm">
-            <Trash2 className="h-4 w-4 mr-2" />
-            Cleanup Old Logs
-          </Button>
           <Button onClick={fetchAuditLogs} variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
+            <RefreshCw className="h-4 w-4 mr-1" />
             Refresh
           </Button>
         </div>
       </div>
 
-      {/* Statistics Cards */}
+      {/* Compact Statistics */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center">
-                <Activity className="h-8 w-8 text-blue-600" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Total Audit Entries</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.totalAuditEntries}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center">
-                <BarChart3 className="h-8 w-8 text-green-600" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Recent Activity (7 days)</p>
-                  <p className="text-2xl font-bold text-gray-900">{stats.recentActivity}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center">
-                <Shield className="h-8 w-8 text-purple-600" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Monitoring Status</p>
-                  <p className="text-lg font-semibold text-green-600">Active</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-blue-50 p-3 rounded-lg border">
+            <p className="text-xs text-blue-600 font-medium">Total Entries</p>
+            <p className="text-lg font-bold text-blue-900">{stats.totalAuditEntries}</p>
+          </div>
+          <div className="bg-green-50 p-3 rounded-lg border">
+            <p className="text-xs text-green-600 font-medium">Recent (7d)</p>
+            <p className="text-lg font-bold text-green-900">{stats.recentActivity}</p>
+          </div>
+          <div className="bg-purple-50 p-3 rounded-lg border">
+            <p className="text-xs text-purple-600 font-medium">Status</p>
+            <p className="text-sm font-semibold text-green-600">Active</p>
+          </div>
         </div>
       )}
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <Label htmlFor="table-filter">Table</Label>
-              <Select value={filters.table} onValueChange={(value) => setFilters({...filters, table: value, page: 1})}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All tables" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">All tables</SelectItem>
-                  <SelectItem value="admin_accounts">Admin Accounts</SelectItem>
-                  <SelectItem value="personnel">Personnel</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+      {/* Simplified Filters */}
+      <div className="bg-white border rounded-lg p-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <Select value={filters.table} onValueChange={(value) => setFilters({...filters, table: value, page: 1})}>
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="All tables" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All tables</SelectItem>
+              <SelectItem value="admin_accounts">Admin Accounts</SelectItem>
+              <SelectItem value="personnel">Personnel</SelectItem>
+            </SelectContent>
+          </Select>
 
-            <div>
-              <Label htmlFor="operation-filter">Operation</Label>
-              <Select value={filters.operation} onValueChange={(value) => setFilters({...filters, operation: value, page: 1})}>
-                <SelectTrigger>
-                  <SelectValue placeholder="All operations" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">All operations</SelectItem>
-                  <SelectItem value="INSERT">Create</SelectItem>
-                  <SelectItem value="UPDATE">Update</SelectItem>
-                  <SelectItem value="DELETE">Delete</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <Select value={filters.operation} onValueChange={(value) => setFilters({...filters, operation: value, page: 1})}>
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="All operations" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All operations</SelectItem>
+              <SelectItem value="INSERT">Create</SelectItem>
+              <SelectItem value="UPDATE">Update</SelectItem>
+              <SelectItem value="DELETE">Delete</SelectItem>
+            </SelectContent>
+          </Select>
 
-            <div>
-              <Label htmlFor="user-filter">User ID</Label>
-              <Input
-                id="user-filter"
-                placeholder="Filter by user ID"
-                value={filters.userId}
-                onChange={(e) => setFilters({...filters, userId: e.target.value, page: 1})}
-              />
-            </div>
+          <Input
+            placeholder="Search user ID..."
+            value={filters.userId}
+            onChange={(e) => setFilters({...filters, userId: e.target.value, page: 1})}
+            className="h-9"
+          />
+        </div>
+      </div>
 
-            <div className="flex items-end">
-              <Button onClick={fetchAuditLogs} className="w-full">
-                <Search className="h-4 w-4 mr-2" />
-                Search
+      {/* Streamlined Table */}
+      <div className="bg-white border rounded-lg">
+        <div className="p-3 border-b bg-gray-50">
+          <h3 className="text-sm font-medium text-gray-900">Activity Log</h3>
+        </div>
+        <div className="overflow-hidden">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="h-5 w-5 animate-spin text-blue-600 mr-2" />
+              <span className="text-sm text-gray-600">Loading...</span>
+            </div>
+          ) : auditLogs.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <Activity className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+              <p className="text-sm">No logs found</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+              {auditLogs.map((log, index) => (
+                <div key={index} className="p-3 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-2 mb-1">
+                        {getOperationBadge(log.operation)}
+                        <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-600">
+                          {log.table_name}
+                        </span>
+                        <span className="text-xs text-gray-500 font-mono">
+                          {new Date(log.event_time).toLocaleString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-900 truncate">{log.event_description}</p>
+                      <p className="text-xs text-gray-500 mt-1">by {log.performed_by}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        
+        {/* Simple Pagination */}
+        {auditLogs.length > 0 && (
+          <div className="p-3 border-t bg-gray-50 flex items-center justify-between">
+            <p className="text-xs text-gray-600">
+              Page {filters.page} • {auditLogs.length} entries
+            </p>
+            <div className="flex space-x-1">
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={() => setFilters({...filters, page: Math.max(1, filters.page - 1)})}
+                disabled={filters.page <= 1}
+                className="h-7 px-2 text-xs"
+              >
+                Previous
+              </Button>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={() => setFilters({...filters, page: filters.page + 1})}
+                disabled={auditLogs.length < 50}
+                className="h-7 px-2 text-xs"
+              >
+                Next
               </Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Audit Logs Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Activities</CardTitle>
-          <CardDescription>
-            All system modifications are logged and monitored for security
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <RefreshCw className="h-6 w-6 animate-spin text-blue-600" />
-              <span className="ml-2 text-gray-600">Loading audit logs...</span>
-            </div>
-          ) : auditLogs.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              No audit logs found matching your filters
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left p-3 font-medium text-gray-600">Time</th>
-                    <th className="text-left p-3 font-medium text-gray-600">Table</th>
-                    <th className="text-left p-3 font-medium text-gray-600">Operation</th>
-                    <th className="text-left p-3 font-medium text-gray-600">Description</th>
-                    <th className="text-left p-3 font-medium text-gray-600">Performed By</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {auditLogs.map((log, index) => (
-                    <tr key={index} className="border-b hover:bg-gray-50">
-                      <td className="p-3 text-gray-600 font-mono text-xs">
-                        {formatDateTime(log.event_time)}
-                      </td>
-                      <td className="p-3">
-                        <Badge variant="outline">{log.table_name}</Badge>
-                      </td>
-                      <td className="p-3">
-                        {getOperationBadge(log.operation)}
-                      </td>
-                      <td className="p-3 text-gray-900">
-                        {log.event_description}
-                      </td>
-                      <td className="p-3 text-gray-600">
-                        {log.performed_by}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        )}
+      </div>
     </div>
   )
 }

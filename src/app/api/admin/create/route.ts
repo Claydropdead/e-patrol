@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { rank, fullName, email, password, role, isActive, assignedProvince, assignedUnit, assignedSubUnit } = await request.json()
+    const { rank, fullName, email, password, role, isActive, assignedRegion, assignedProvince, assignedUnit, assignedSubUnit } = await request.json()
 
     // Validate required fields
     if (!rank || !fullName || !email || !password || !role) {
@@ -66,6 +66,28 @@ export async function POST(request: NextRequest) {
     if (!validRoles.includes(role)) {
       return NextResponse.json(
         { error: 'Invalid role specified' },
+        { status: 400 }
+      )
+    }
+
+    // Validate role-specific assignments
+    if (role === 'regional' && (!assignedRegion || assignedRegion !== 'MIMAROPA')) {
+      return NextResponse.json(
+        { error: 'Regional admins must be assigned to MIMAROPA region' },
+        { status: 400 }
+      )
+    }
+
+    if (role === 'provincial' && (!assignedRegion || !assignedProvince)) {
+      return NextResponse.json(
+        { error: 'Provincial admins must have region and province assigned' },
+        { status: 400 }
+      )
+    }
+
+    if (role === 'station' && (!assignedRegion || !assignedProvince || !assignedSubUnit)) {
+      return NextResponse.json(
+        { error: 'Station admins must have region, province, and sub-unit assigned' },
         { status: 400 }
       )
     }
@@ -101,6 +123,64 @@ export async function POST(request: NextRequest) {
     }
 
     if (authData.user) {
+      // Prepare assignment fields based on role hierarchy
+      let dbAssignments: {
+        assigned_region: string | null
+        assigned_province: string | null
+        assigned_unit: string | null
+        assigned_sub_unit: string | null
+      }
+
+      switch (role) {
+        case 'superadmin':
+          // Superadmin: All assignment fields are NULL
+          dbAssignments = {
+            assigned_region: null,
+            assigned_province: null,
+            assigned_unit: null,
+            assigned_sub_unit: null
+          }
+          break
+        
+        case 'regional':
+          // Regional: Only region assigned, rest are NULL
+          dbAssignments = {
+            assigned_region: assignedRegion,
+            assigned_province: null,
+            assigned_unit: null,
+            assigned_sub_unit: null
+          }
+          break
+        
+        case 'provincial':
+          // Provincial: Region and province assigned, unit and sub-unit are NULL
+          dbAssignments = {
+            assigned_region: assignedRegion,
+            assigned_province: assignedProvince,
+            assigned_unit: null,
+            assigned_sub_unit: null
+          }
+          break
+        
+        case 'station':
+          // Station: All fields assigned
+          dbAssignments = {
+            assigned_region: assignedRegion,
+            assigned_province: assignedProvince,
+            assigned_unit: assignedUnit || null,
+            assigned_sub_unit: assignedSubUnit
+          }
+          break
+        
+        default:
+          dbAssignments = {
+            assigned_region: null,
+            assigned_province: null,
+            assigned_unit: null,
+            assigned_sub_unit: null
+          }
+      }
+
       // Create admin account profile
       const { error: profileError } = await supabaseAdmin
         .from('admin_accounts')
@@ -111,9 +191,7 @@ export async function POST(request: NextRequest) {
           email,
           role,
           is_active: isActive ?? true,
-          assigned_province: assignedProvince || null,
-          assigned_unit: assignedUnit || null,
-          assigned_sub_unit: assignedSubUnit || null
+          ...dbAssignments
         })
 
       if (profileError) {

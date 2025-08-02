@@ -170,7 +170,9 @@ export function PersonnelCreationForm() {
                   <SelectValue placeholder="Select province" />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.keys(MIMAROPA_STRUCTURE).map((province) => (
+                  {Object.keys(MIMAROPA_STRUCTURE)
+                    .filter(province => province && province.trim() !== '')
+                    .map((province) => (
                     <SelectItem key={province} value={province}>
                       {province}
                     </SelectItem>
@@ -190,7 +192,9 @@ export function PersonnelCreationForm() {
                   <SelectValue placeholder="Select sub-unit" />
                 </SelectTrigger>
                 <SelectContent>
-                  {getSubUnits().map((subUnit) => (
+                  {getSubUnits()
+                    .filter(subUnit => subUnit && subUnit.trim() !== '')
+                    .map((subUnit) => (
                     <SelectItem key={subUnit} value={subUnit}>
                       {subUnit}
                     </SelectItem>

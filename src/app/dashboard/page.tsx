@@ -3,10 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/lib/stores/auth'
-import { DashboardHeader } from '@/components/dashboard/header'
 import { DashboardSidebar } from '@/components/dashboard/sidebar'
 import { DashboardContent } from '@/components/dashboard/content'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Navigation } from 'lucide-react'
 
 export default function DashboardPage() {
   const { user, adminAccount, personnel, userType, loading } = useAuthStore()
@@ -76,21 +75,33 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50/30">
-      <DashboardHeader />
-      <div className="flex">
-        <DashboardSidebar 
-          userType={userType} 
-          adminRole={adminAccount?.role} 
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-        />
-        <main className="flex-1 p-6 overflow-auto">
+    <div className="min-h-screen bg-gray-50/30 flex">
+      <DashboardSidebar 
+        userType={userType} 
+        adminRole={adminAccount?.role} 
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
+      <main className="flex-1 overflow-auto">
+        {/* Mobile Header */}
+        <div className="md:hidden bg-white border-b border-gray-100 p-4 flex items-center justify-between sticky top-0 z-30">
+          <div className="flex items-center space-x-3">
+            <div className="h-8 w-8 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center">
+              <Navigation className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-gray-900">E-Patrol</h1>
+              <p className="text-xs text-gray-500">MIMAROPA Command</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="p-4 md:p-6">
           <div className="max-w-7xl mx-auto">
             <DashboardContent activeTab={activeTab} />
           </div>
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   )
 }

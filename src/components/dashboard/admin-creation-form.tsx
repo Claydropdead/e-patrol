@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import type { AdminRole } from '@/lib/types/database'
+import { MIMAROPA_STRUCTURE, getProvinceSubUnits } from '@/lib/constants/mimaropa'
 
 export function AdminCreationForm() {
   const [loading, setLoading] = useState(false)
@@ -19,15 +20,56 @@ export function AdminCreationForm() {
     password: '',
     role: '' as AdminRole | '',
     isActive: true,
+    assignedRegion: '',
     assignedProvince: '',
     assignedUnit: '',
     assignedSubUnit: ''
   })
 
+  // Helper function to handle role change and reset assignment fields
+  const handleRoleChange = (role: AdminRole) => {
+    setFormData(prev => ({
+      ...prev,
+      role,
+      // Reset assignment fields when role changes
+      assignedRegion: role === 'superadmin' ? '' : (role === 'regional' ? 'MIMAROPA' : ''),
+      assignedProvince: '',
+      assignedUnit: '',
+      assignedSubUnit: ''
+    }))
+  }
+
+  // Helper function to handle province change and reset sub-fields
+  const handleProvinceChange = (province: string) => {
+    setFormData(prev => ({
+      ...prev,
+      assignedProvince: province,
+      assignedUnit: '',
+      assignedSubUnit: ''
+    }))
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.role) {
       toast.error('Please select a role')
+      return
+    }
+
+    // Validate role-specific requirements
+    if (formData.role === 'station') {
+      if (!formData.assignedProvince) {
+        toast.error('Station admins must have an assigned province/unit')
+        return
+      }
+      if (!formData.assignedSubUnit) {
+        toast.error('Station admins must have an assigned sub-unit')
+        return
+      }
+    }
+
+    if (formData.role === 'provincial' && !formData.assignedProvince) {
+      toast.error('Provincial admins must have an assigned province/unit')
       return
     }
 
@@ -45,6 +87,7 @@ export function AdminCreationForm() {
           password: formData.password,
           role: formData.role,
           isActive: formData.isActive,
+          assignedRegion: formData.assignedRegion,
           assignedProvince: formData.assignedProvince,
           assignedUnit: formData.assignedUnit,
           assignedSubUnit: formData.assignedSubUnit
@@ -67,6 +110,7 @@ export function AdminCreationForm() {
         password: '',
         role: '' as AdminRole | '',
         isActive: true,
+        assignedRegion: '',
         assignedProvince: '',
         assignedUnit: '',
         assignedSubUnit: ''
@@ -144,7 +188,7 @@ export function AdminCreationForm() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="role">Admin Role</Label>
-              <Select value={formData.role} onValueChange={(value: AdminRole) => setFormData({ ...formData, role: value })}>
+              <Select value={formData.role} onValueChange={handleRoleChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select admin role" />
                 </SelectTrigger>
@@ -169,49 +213,151 @@ export function AdminCreationForm() {
             </div>
           </div>
 
-          {/* Assignment Fields - Show only for Provincial and Station roles */}
-          {(formData.role === 'provincial' || formData.role === 'station') && (
+          {/* Assignment Fields - Show based on role hierarchy */}
+          {formData.role && formData.role !== 'superadmin' && (
             <div className="border-t pt-4">
               <h3 className="text-sm font-medium text-gray-900 mb-3">Assignment Information</h3>
               
-              {formData.role === 'provincial' && (
-                <div>
-                  <Label htmlFor="assignedProvince">Assigned Province</Label>
-                  <Select value={formData.assignedProvince} onValueChange={(value) => setFormData({ ...formData, assignedProvince: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select assigned province" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Oriental Mindoro PPO">Oriental Mindoro PPO</SelectItem>
-                      <SelectItem value="Occidental Mindoro PPO">Occidental Mindoro PPO</SelectItem>
-                      <SelectItem value="Marinduque PPO">Marinduque PPO</SelectItem>
-                      <SelectItem value="Romblon PPO">Romblon PPO</SelectItem>
-                      <SelectItem value="Palawan PPO">Palawan PPO</SelectItem>
-                      <SelectItem value="Puerto Princesa CPO">Puerto Princesa CPO</SelectItem>
-                      <SelectItem value="RMFB">RMFB</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {/* Regional Role - Shows MIMAROPA region (auto-selected) */}
+              {formData.role === 'regional' && (
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="assignedRegion">Assigned Region</Label>
+                    <Input
+                      id="assignedRegion"
+                      value="MIMAROPA"
+                      disabled
+                      className="bg-gray-50"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Regional admins manage the entire MIMAROPA region
+                    </p>
+                  </div>
                 </div>
               )}
 
+              {/* Provincial Role - Select region and province */}
+              {formData.role === 'provincial' && (
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="assignedRegion">Assigned Region</Label>
+                    <Input
+                      id="assignedRegion"
+                      value="MIMAROPA"
+                      disabled
+                      className="bg-gray-50"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="assignedProvince">Assigned Province/Unit</Label>
+                    <Select 
+                      value={formData.assignedProvince} 
+                      onValueChange={handleProvinceChange}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select assigned province/unit" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.keys(MIMAROPA_STRUCTURE)
+                          .filter(province => province && province.trim() !== '')
+                          .map((province) => (
+                          <SelectItem key={province} value={province}>
+                            {province}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Provincial admins manage a specific province or unit within MIMAROPA
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Station Role - Select region, province, and sub-unit */}
               {formData.role === 'station' && (
-                <div>
-                  <Label htmlFor="assignedSubUnit">Assigned Sub-Unit</Label>
-                  <Input
-                    id="assignedSubUnit"
-                    value={formData.assignedSubUnit}
-                    onChange={(e) => setFormData({ ...formData, assignedSubUnit: e.target.value })}
-                    placeholder="e.g. Calapan CPS - Investigation Unit"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Enter the specific sub-unit this admin will manage
-                  </p>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="assignedRegion">Assigned Region</Label>
+                    <Input
+                      id="assignedRegion"
+                      value="MIMAROPA"
+                      disabled
+                      className="bg-gray-50"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="assignedProvince">Assigned Province/Unit <span className="text-red-500">*</span></Label>
+                    <Select 
+                      value={formData.assignedProvince} 
+                      onValueChange={handleProvinceChange}
+                      required
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select assigned province/unit" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.keys(MIMAROPA_STRUCTURE)
+                          .filter(province => province && province.trim() !== '')
+                          .map((province) => (
+                          <SelectItem key={province} value={province}>
+                            {province}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Select the province or unit this station admin will manage
+                    </p>
+                  </div>
+                  {formData.assignedProvince && (
+                    <div>
+                      <Label htmlFor="assignedSubUnit">Assigned Sub-Unit <span className="text-red-500">*</span></Label>
+                      <Select 
+                        value={formData.assignedSubUnit} 
+                        onValueChange={(value) => setFormData(prev => ({ ...prev, assignedSubUnit: value }))}
+                        required
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select assigned sub-unit" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {getProvinceSubUnits(formData.assignedProvince as any)
+                            .filter(subUnit => subUnit && subUnit.trim() !== '')
+                            .map((subUnit) => (
+                            <SelectItem key={subUnit} value={subUnit}>
+                              {subUnit}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        <strong>Required:</strong> Station admins must be assigned to a specific sub-unit
+                      </p>
+                    </div>
+                  )}
+                  {formData.role === 'station' && !formData.assignedSubUnit && formData.assignedProvince && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+                      <p className="text-sm text-amber-700">
+                        ⚠️ Please select a sub-unit. Station admins must be assigned to a specific sub-unit within their province.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )}
 
-          <Button type="submit" disabled={loading} className="w-full">
+          <Button 
+            type="submit" 
+            disabled={
+              loading || 
+              !formData.role || 
+              (formData.role === 'station' && (!formData.assignedProvince || !formData.assignedSubUnit)) ||
+              (formData.role === 'provincial' && !formData.assignedProvince)
+            } 
+            className="w-full"
+          >
             {loading ? 'Creating...' : 'Create Admin Account'}
           </Button>
         </form>
