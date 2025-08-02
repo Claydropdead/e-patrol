@@ -109,16 +109,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       
       const supabase = createClient()
       
-      // First check if user is an admin
-      const { data: adminData, error: adminError } = await supabase
-        .from('admin_accounts')
-        .select('*')
-        .eq('id', user.id)
-        .single()
+      // PERFORMANCE OPTIMIZATION: Run both queries in parallel
+      const [adminResult, personnelResult] = await Promise.allSettled([
+        supabase
+          .from('admin_accounts')
+          .select('*')
+          .eq('id', user.id)
+          .single(),
+        supabase
+          .from('personnel')
+          .select('*')
+          .eq('id', user.id)
+          .single()
+      ])
       
-      if (adminData && !adminError) {
+      // Process admin result
+      if (adminResult.status === 'fulfilled' && adminResult.value.data && !adminResult.value.error) {
         set({ 
-          adminAccount: adminData, 
+          adminAccount: adminResult.value.data, 
           personnel: null, 
           userType: 'admin',
           error: null 
@@ -126,22 +134,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return
       }
       
-      // Then check if user is personnel
-      const { data: personnelData, error: personnelError } = await supabase
-        .from('personnel')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-      
-      if (personnelData && !personnelError) {
+      // Process personnel result
+      if (personnelResult.status === 'fulfilled' && personnelResult.value.data && !personnelResult.value.error) {
         set({ 
           adminAccount: null, 
-          personnel: personnelData, 
+          personnel: personnelResult.value.data, 
           userType: 'personnel',
           error: null 
         })
         return
       }
+      
+      // Handle cases where both queries failed or returned no data
+      const adminError = adminResult.status === 'fulfilled' ? adminResult.value.error : adminResult.reason
+      const personnelError = personnelResult.status === 'fulfilled' ? personnelResult.value.error : personnelResult.reason
       
       // Handle RLS policy errors (user might have profile but RLS blocks access)
       if (adminError?.code === 'PGRST116' && personnelError?.code === 'PGRST116') {
