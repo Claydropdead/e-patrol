@@ -105,28 +105,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   fetchUserProfile: async () => {
     try {
       const { user } = get()
-      if (!user) return
+      if (!user?.id) return
       
       const supabase = createClient()
       
-      // PERFORMANCE OPTIMIZATION: Run both queries in parallel
-      const [adminResult, personnelResult] = await Promise.allSettled([
-        supabase
-          .from('admin_accounts')
-          .select('*')
-          .eq('id', user.id)
-          .single(),
-        supabase
-          .from('personnel')
-          .select('*')
-          .eq('id', user.id)
-          .single()
-      ])
+      // Check admin_accounts first
+      const { data: adminData, error: adminError } = await supabase
+        .from('admin_accounts')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle() // Use maybeSingle to avoid throwing on no results
       
-      // Process admin result
-      if (adminResult.status === 'fulfilled' && adminResult.value.data && !adminResult.value.error) {
+      if (adminData && !adminError) {
         set({ 
-          adminAccount: adminResult.value.data, 
+          adminAccount: adminData, 
           personnel: null, 
           userType: 'admin',
           error: null 
@@ -134,20 +126,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return
       }
       
-      // Process personnel result
-      if (personnelResult.status === 'fulfilled' && personnelResult.value.data && !personnelResult.value.error) {
+      // If not admin, check personnel
+      const { data: personnelData, error: personnelError } = await supabase
+        .from('personnel')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle() // Use maybeSingle to avoid throwing on no results
+      
+      if (personnelData && !personnelError) {
         set({ 
           adminAccount: null, 
-          personnel: personnelResult.value.data, 
+          personnel: personnelData, 
           userType: 'personnel',
           error: null 
         })
         return
       }
       
-      // Handle cases where both queries failed or returned no data
-      const adminError = adminResult.status === 'fulfilled' ? adminResult.value.error : adminResult.reason
-      const personnelError = personnelResult.status === 'fulfilled' ? personnelResult.value.error : personnelResult.reason
+      // If neither found, user might not be properly set up
+      console.warn('User not found in admin_accounts or personnel tables:', user.id)
+      set({ 
+        adminAccount: null, 
+        personnel: null, 
+        userType: null,
+        error: 'User profile not found' 
+      })
       
       // Handle RLS policy errors (user might have profile but RLS blocks access)
       if (adminError?.code === 'PGRST116' && personnelError?.code === 'PGRST116') {

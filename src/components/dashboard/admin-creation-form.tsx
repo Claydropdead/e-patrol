@@ -331,7 +331,7 @@ export function AdminCreationForm() {
                           <SelectValue placeholder="Select assigned sub-unit" />
                         </SelectTrigger>
                         <SelectContent>
-                          {getProvinceSubUnits(formData.assignedProvince as any)
+                          {getProvinceSubUnits(formData.assignedProvince as keyof typeof MIMAROPA_STRUCTURE)
                             .filter(subUnit => subUnit && subUnit.trim() !== '')
                             .map((subUnit) => (
                             <SelectItem key={subUnit} value={subUnit}>

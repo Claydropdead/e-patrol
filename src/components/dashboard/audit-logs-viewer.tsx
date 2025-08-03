@@ -9,17 +9,20 @@ import { toast } from 'sonner'
 import { RefreshCw, Activity } from 'lucide-react'
 
 interface AuditEntry {
-  event_time: string
+  changed_at: string
   table_name: string
   operation: string
-  event_description: string
-  performed_by: string
+  new_data: Record<string, unknown> | null
+  changed_by: string
 }
 
 interface AuditStats {
   totalAuditEntries: number
   recentActivity: number
-  tableActivity: any[]
+  tableActivity: Array<{
+    table_name: string
+    count: number
+  }>
 }
 
 export function AuditLogsViewer() {
@@ -46,7 +49,7 @@ export function AuditLogsViewer() {
 
       const params = new URLSearchParams({
         page: filters.page.toString(),
-        limit: '50'
+        limit: '25' // Reduced limit for faster loading
       })
 
       if (filters.table && filters.table !== 'all') params.append('table', filters.table)
@@ -65,7 +68,7 @@ export function AuditLogsViewer() {
         throw new Error(result.error || 'Failed to fetch audit logs')
       }
 
-      setAuditLogs(result.data)
+      setAuditLogs(result.data || [])
     } catch (error) {
       console.error('Error fetching audit logs:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to fetch audit logs')
@@ -115,8 +118,12 @@ export function AuditLogsViewer() {
 
   useEffect(() => {
     fetchAuditLogs()
+  }, [filters.page, filters.table, filters.operation, filters.userId])
+
+  // Initial load only
+  useEffect(() => {
     fetchStats()
-  }, [filters])
+  }, [])
 
   return (
     <div className="space-y-4">
@@ -142,19 +149,19 @@ export function AuditLogsViewer() {
             <p className="text-lg font-bold text-blue-900">{stats.totalAuditEntries}</p>
           </div>
           <div className="bg-green-50 p-3 rounded-lg border">
-            <p className="text-xs text-green-600 font-medium">Recent (7d)</p>
+            <p className="text-xs text-green-600 font-medium">Recent Activity</p>
             <p className="text-lg font-bold text-green-900">{stats.recentActivity}</p>
           </div>
-          <div className="bg-purple-50 p-3 rounded-lg border">
-            <p className="text-xs text-purple-600 font-medium">Status</p>
-            <p className="text-sm font-semibold text-green-600">Active</p>
+          <div className="bg-gray-50 p-3 rounded-lg border">
+            <p className="text-xs text-gray-600 font-medium">Tables Monitored</p>
+            <p className="text-lg font-bold text-gray-900">{stats.tableActivity?.length || 0}</p>
           </div>
         </div>
       )}
 
-      {/* Simplified Filters */}
-      <div className="bg-white border rounded-lg p-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {/* Compact Filters */}
+      <div className="bg-white border rounded-lg p-3">
+        <div className="grid grid-cols-3 gap-3">
           <Select value={filters.table} onValueChange={(value) => setFilters({...filters, table: value, page: 1})}>
             <SelectTrigger className="h-9">
               <SelectValue placeholder="All tables" />
@@ -194,9 +201,23 @@ export function AuditLogsViewer() {
         </div>
         <div className="overflow-hidden">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <RefreshCw className="h-5 w-5 animate-spin text-blue-600 mr-2" />
-              <span className="text-sm text-gray-600">Loading...</span>
+            // Improved loading skeleton
+            <div className="divide-y divide-gray-100">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="p-3 animate-pulse">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-2 flex-1">
+                      <div className="flex items-center space-x-2">
+                        <div className="h-3 bg-gray-200 rounded w-20"></div>
+                        <div className="h-6 bg-gray-200 rounded-full w-16"></div>
+                      </div>
+                      <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                      <div className="h-3 bg-gray-200 rounded w-1/3"></div>
+                    </div>
+                    <div className="h-3 bg-gray-200 rounded w-24"></div>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : auditLogs.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
@@ -210,12 +231,10 @@ export function AuditLogsViewer() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-1">
+                        <span className="text-xs font-medium text-gray-900">{log.table_name}</span>
                         {getOperationBadge(log.operation)}
-                        <span className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-600">
-                          {log.table_name}
-                        </span>
-                        <span className="text-xs text-gray-500 font-mono">
-                          {new Date(log.event_time).toLocaleString('en-US', {
+                        <span className="text-xs text-gray-500">
+                          {new Date(log.changed_at).toLocaleString('en-US', {
                             month: 'short',
                             day: 'numeric',
                             hour: '2-digit',
@@ -223,8 +242,10 @@ export function AuditLogsViewer() {
                           })}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-900 truncate">{log.event_description}</p>
-                      <p className="text-xs text-gray-500 mt-1">by {log.performed_by}</p>
+                      <p className="text-sm text-gray-900 truncate">
+                        {log.new_data ? JSON.stringify(log.new_data).substring(0, 100) + '...' : 'No details'}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">by {log.changed_by}</p>
                     </div>
                   </div>
                 </div>
@@ -253,7 +274,7 @@ export function AuditLogsViewer() {
                 size="sm" 
                 variant="outline" 
                 onClick={() => setFilters({...filters, page: filters.page + 1})}
-                disabled={auditLogs.length < 50}
+                disabled={auditLogs.length < 25}
                 className="h-7 px-2 text-xs"
               >
                 Next

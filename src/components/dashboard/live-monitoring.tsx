@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import * as L from 'leaflet'
 import { 
   MapPin, 
   Users, 
@@ -17,12 +18,12 @@ import {
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createClient } from '@/lib/supabase/client'
 
 // Mini map component for Live Monitoring
 function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
   const [isLoaded, setIsLoaded] = useState(false)
-  const [map, setMap] = useState<any>(null)
+  const mapRef = useRef<L.Map | null>(null)
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -32,14 +33,14 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
 
   // Initialize map only once
   useEffect(() => {
-    if (!isLoaded || map) return
+    if (!isLoaded || mapRef.current) return
 
     const initMap = async () => {
       try {
         const L = (await import('leaflet')).default
 
         // Fix for default markers
-        delete (L.Icon.Default.prototype as any)._getIconUrl
+        delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl
         L.Icon.Default.mergeOptions({
           iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
           iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
@@ -74,7 +75,7 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
           attribution: '&copy; OpenStreetMap contributors'
         }).addTo(newMap)
 
-        setMap(newMap)
+        mapRef.current = newMap
 
       } catch (error) {
         console.error('Error initializing mini map:', error)
@@ -85,29 +86,29 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
 
     // Cleanup on unmount
     return () => {
-      if (map) {
+      if (mapRef.current) {
         try {
-          map.remove()
+          mapRef.current.remove()
         } catch (e) {
           console.error('Error removing map:', e)
         }
-        setMap(null)
+        mapRef.current = null
       }
     }
-  }, [isLoaded, map])
+  }, [isLoaded])
 
   // Update markers when personnel data changes
   useEffect(() => {
-    if (!map || !personnel) return
+    if (!mapRef.current || !personnel) return
 
     const updateMarkers = async () => {
       try {
         const L = (await import('leaflet')).default
 
         // Clear existing markers
-        map.eachLayer((layer: any) => {
+        mapRef.current?.eachLayer((layer: L.Layer) => {
           if (layer instanceof L.Marker) {
-            map.removeLayer(layer)
+            mapRef.current?.removeLayer(layer)
           }
         })
 
@@ -135,7 +136,7 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
             })
 
             const marker = L.marker([person.latitude, person.longitude], { icon: customIcon })
-              .addTo(map)
+              .addTo(mapRef.current!)
 
             const statusBadge = person.status === 'alert' ? '🔴 Alert' :
                                person.status === 'standby' ? '🟡 Standby' :
@@ -162,7 +163,7 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
           
           if (markers.length > 0) {
             const group = L.featureGroup(markers)
-            map.fitBounds(group.getBounds().pad(0.1))
+            mapRef.current?.fitBounds(group.getBounds().pad(0.1))
           }
         }
 
@@ -172,7 +173,7 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
     }
 
     updateMarkers()
-  }, [map, personnel])
+  }, [personnel]) // mapRef doesn't need to be in dependencies
 
   if (!isLoaded) {
     return (
@@ -223,7 +224,7 @@ export function LiveMonitoring() {
   const [searchTerm, setSearchTerm] = useState('')
   const [lastUpdate, setLastUpdate] = useState(new Date())
   
-  const supabase = createClientComponentClient()
+  const supabase = createClient()
 
   // Fetch personnel data from database
   const fetchPersonnelData = async () => {
@@ -232,7 +233,7 @@ export function LiveMonitoring() {
       setError(null)
       
       // Try to fetch from live_monitoring view first
-      let { data, error } = await supabase
+      const { data, error } = await supabase
         .from('live_monitoring')
         .select('*')
         .order('full_name')
@@ -627,7 +628,7 @@ export function LiveMonitoring() {
                 
                 <div className="space-y-2">
                   {/* Status Filter */}
-                  <Select value={statusFilter} onValueChange={(value: any) => setStatusFilter(value)}>
+                  <Select value={statusFilter} onValueChange={(value: DutyStatus | 'all') => setStatusFilter(value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Filter by Status" />
                     </SelectTrigger>
@@ -693,7 +694,7 @@ export function LiveMonitoring() {
                     )}
                     {searchTerm && (
                       <Badge variant="secondary" className="text-xs">
-                        "{searchTerm}"
+                        &ldquo;{searchTerm}&rdquo;
                       </Badge>
                     )}
                   </div>
