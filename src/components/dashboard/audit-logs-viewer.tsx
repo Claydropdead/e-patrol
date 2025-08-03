@@ -13,7 +13,7 @@ interface AuditEntry {
   table_name: string
   operation: string
   new_data: Record<string, unknown> | null
-  changed_by: string
+  changed_by: string | null
 }
 
 interface AuditStats {
@@ -37,6 +37,80 @@ export function AuditLogsViewer() {
   })
 
   const supabase = createClient()
+
+  // Helper function to format audit data in user-friendly way
+  const formatAuditData = (log: AuditEntry): string => {
+    if (!log.new_data) {
+      // For DELETE operations, we might not have new_data but could show table info
+      if (log.operation === 'DELETE') {
+        return `Deleted record from ${log.table_name.replace('_', ' ')}`
+      }
+      return 'No details available'
+    }
+    
+    try {
+      const data = log.new_data
+      
+      if (log.table_name === 'admin_accounts') {
+        const name = String(data.full_name || 'Unknown')
+        const role = String(data.role || 'Unknown')
+        const email = String(data.email || 'No email')
+        const rank = String(data.rank || 'No rank')
+        
+        if (log.operation === 'INSERT') {
+          return `Created admin: ${name} (${rank}) - ${role.toUpperCase()} role - ${email}`
+        } else if (log.operation === 'UPDATE') {
+          return `Updated admin: ${name} (${rank}) - Role: ${role.toUpperCase()}`
+        } else if (log.operation === 'DELETE') {
+          return `Deleted admin: ${name} (${rank})`
+        }
+      }
+      
+      if (log.table_name === 'personnel') {
+        const name = String(data.full_name || 'Unknown')
+        const rank = String(data.rank || 'No rank')
+        const unit = String(data.sub_unit || data.unit || 'No unit')
+        const province = String(data.province || 'No province')
+        
+        if (log.operation === 'INSERT') {
+          return `Created personnel: ${name} (${rank}) - ${unit}, ${province}`
+        } else if (log.operation === 'UPDATE') {
+          return `Updated personnel: ${name} (${rank}) - ${unit}`
+        } else if (log.operation === 'DELETE') {
+          return `Deleted personnel: ${name} (${rank})`
+        }
+      }
+      
+      // Generic fallback for other tables
+      const operation = log.operation.toLowerCase()
+      const tableName = log.table_name.replace('_', ' ')
+      return `${operation.charAt(0).toUpperCase() + operation.slice(1)} record in ${tableName}`
+      
+    } catch (error) {
+      console.error('Error formatting audit data:', error)
+      return `${log.operation.toLowerCase()} operation on ${log.table_name.replace('_', ' ')}`
+    }
+  }
+
+  // Helper function to format the "changed_by" field
+  const formatChangedBy = (changedBy: string | null): string => {
+    // Handle null or undefined values
+    if (!changedBy) {
+      return 'System'
+    }
+    
+    // If it looks like an email, show it as-is
+    if (changedBy.includes('@')) {
+      return changedBy
+    }
+    
+    // If it looks like a UUID, show a friendlier message
+    if (changedBy.length === 36 && changedBy.includes('-')) {
+      return 'System Admin'
+    }
+    
+    return changedBy
+  }
 
   const fetchAuditLogs = async () => {
     setLoading(true)
@@ -169,7 +243,7 @@ export function AuditLogsViewer() {
             <SelectContent>
               <SelectItem value="all">All tables</SelectItem>
               <SelectItem value="admin_accounts">Admin Accounts</SelectItem>
-              <SelectItem value="personnel">Personnel</SelectItem>
+              <SelectItem value="personnel">Personnel Records</SelectItem>
             </SelectContent>
           </Select>
 
@@ -186,7 +260,7 @@ export function AuditLogsViewer() {
           </Select>
 
           <Input
-            placeholder="Search user ID..."
+            placeholder="Search by user email..."
             value={filters.userId}
             onChange={(e) => setFilters({...filters, userId: e.target.value, page: 1})}
             className="h-9"
@@ -231,7 +305,9 @@ export function AuditLogsViewer() {
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-1">
-                        <span className="text-xs font-medium text-gray-900">{log.table_name}</span>
+                        <span className="text-xs font-medium text-gray-900 capitalize">
+                          {log.table_name.replace('_', ' ')}
+                        </span>
                         {getOperationBadge(log.operation)}
                         <span className="text-xs text-gray-500">
                           {new Date(log.changed_at).toLocaleString('en-US', {
@@ -242,10 +318,10 @@ export function AuditLogsViewer() {
                           })}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-900 truncate">
-                        {log.new_data ? JSON.stringify(log.new_data).substring(0, 100) + '...' : 'No details'}
+                      <p className="text-sm text-gray-900">
+                        {formatAuditData(log)}
                       </p>
-                      <p className="text-xs text-gray-500 mt-1">by {log.changed_by}</p>
+                      <p className="text-xs text-gray-500 mt-1">by {formatChangedBy(log.changed_by)}</p>
                     </div>
                   </div>
                 </div>
