@@ -75,14 +75,14 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50/30 flex">
+    <div className="h-screen bg-gray-50/30 flex overflow-hidden">
       <DashboardSidebar 
         userType={userType} 
         adminRole={adminAccount?.role} 
         activeTab={activeTab}
         onTabChange={setActiveTab}
       />
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto h-full">
         {/* Mobile Header */}
         <div className="md:hidden bg-white border-b border-gray-100 p-4 flex items-center justify-between sticky top-0 z-30">
           <div className="flex items-center space-x-3">

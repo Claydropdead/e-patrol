@@ -293,7 +293,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE personnel_status_history;
 -- 10. USEFUL FUNCTIONS
 -- =============================================
 
--- Function to get personnel within a radius (for geofencing)
+-- Function to get personnel within a radius (for proximity detection)
 CREATE OR REPLACE FUNCTION get_personnel_within_radius(
     center_lat DECIMAL,
     center_lng DECIMAL,

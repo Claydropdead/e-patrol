@@ -135,13 +135,6 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
       type: 'item'
     },
     {
-      id: 'live-map',
-      label: 'Live Map',
-      icon: Navigation,
-      available: ['superadmin', 'regional', 'provincial', 'station'],
-      type: 'item'
-    },
-    {
       id: 'analytics',
       label: 'Analytics',
       icon: BarChart3,
@@ -181,7 +174,7 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
           <Button
             variant="ghost"
             className={cn(
-              isCollapsed ? 'w-10 h-10 p-0 mx-auto' : 'w-full justify-between h-11 px-3 text-left font-medium',
+              isCollapsed ? 'w-8 h-8 p-0 mx-auto' : 'w-full justify-between h-9 px-2 text-left font-medium',
               'sidebar-item-hover dashboard-smooth-transition sidebar-button',
               'hover:bg-blue-50 hover:text-blue-700',
               isExpanded && 'bg-blue-50 text-blue-700 shadow-sm'
@@ -190,12 +183,12 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
             title={isCollapsed ? item.label : undefined}
           >
             {isCollapsed ? (
-              <Icon className="h-5 w-5" />
+              <Icon className="h-4 w-4" />
             ) : (
               <>
                 <div className="flex items-center">
-                  <Icon className="mr-3 h-5 w-5" />
-                  <span className="text-sm">{item.label}</span>
+                  <Icon className="mr-2 h-4 w-4" />
+                  <span className="text-xs">{item.label}</span>
                 </div>
                 {isExpanded ? (
                   <ChevronDown className="h-4 w-4 dashboard-smooth-transition" />
@@ -218,7 +211,7 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
                       key={child.id}
                       variant="ghost"
                       className={cn(
-                        'w-full justify-start h-10 px-4 text-left font-medium',
+                        'w-full justify-start h-8 px-3 text-left font-medium',
                         'sidebar-item-hover dashboard-smooth-transition sidebar-button',
                         'hover:bg-blue-50 hover:text-blue-700 hover:shadow-sm',
                         isChildActive && 'bg-blue-100 text-blue-800 shadow-lg border-l-4 border-blue-600 font-semibold'
@@ -228,8 +221,8 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
                         closeMobileMenu()
                       }}
                     >
-                      <ChildIcon className="mr-2 h-4 w-4 flex-shrink-0" />
-                      <span className="text-sm truncate">{child.label}</span>
+                      <ChildIcon className="mr-2 h-3 w-3 flex-shrink-0" />
+                      <span className="text-xs truncate">{child.label}</span>
                     </Button>
                   )
                 })}
@@ -244,7 +237,7 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
         key={item.id}
         variant="ghost"
         className={cn(
-          isCollapsed ? 'w-10 h-10 p-0 mx-auto' : 'w-full justify-start h-11 px-3 text-left font-medium',
+          isCollapsed ? 'w-8 h-8 p-0 mx-auto' : 'w-full justify-start h-9 px-2 text-left font-medium',
           'sidebar-item-hover dashboard-smooth-transition sidebar-button',
           'hover:bg-blue-50 hover:text-blue-700',
           activeTab === item.id && 'bg-blue-100 text-blue-800 shadow-md border-l-4 border-blue-500 font-semibold'
@@ -256,11 +249,11 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
         title={isCollapsed ? item.label : undefined}
       >
         {isCollapsed ? (
-          <Icon className="h-5 w-5" />
+          <Icon className="h-4 w-4" />
         ) : (
           <>
-            <Icon className="mr-3 h-5 w-5" />
-            <span className="text-sm">{item.label}</span>
+            <Icon className="mr-2 h-4 w-4" />
+            <span className="text-xs">{item.label}</span>
           </>
         )}
       </Button>
@@ -278,7 +271,7 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
       )}
       
       <aside className={cn(
-        "bg-white shadow-lg border-r border-gray-100 h-screen overflow-y-auto sidebar-scroll transition-all duration-300 ease-in-out z-50",
+        "bg-white shadow-lg border-r border-gray-100 h-screen flex flex-col transition-all duration-300 ease-in-out z-50",
         // Desktop behavior
         "md:relative md:translate-x-0",
         isCollapsed ? "md:w-16" : "md:w-64",
@@ -286,9 +279,9 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
         "fixed left-0 top-0 w-64",
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}>
-        <div className="p-4">
+        <div className="flex flex-col h-full p-4">
           {/* Header with Hamburger Menu */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-4">
             <Button
               variant="ghost"
               size="sm"
@@ -317,12 +310,12 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
 
           {/* Logo & Brand */}
           {!isCollapsed && (
-            <div className="flex items-center space-x-3 mb-8 pb-6 border-b border-gray-100">
-              <div className="h-10 w-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center shadow-md dashboard-smooth-transition hover:shadow-lg">
-                <Navigation className="h-6 w-6 text-white" />
+            <div className="flex items-center space-x-3 mb-4 pb-3 border-b border-gray-100">
+              <div className="h-8 w-8 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center shadow-md dashboard-smooth-transition hover:shadow-lg">
+                <Navigation className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-gray-900">E-Patrol</h2>
+                <h2 className="text-base font-bold text-gray-900">E-Patrol</h2>
                 <p className="text-xs text-gray-500 font-medium">MIMAROPA Command</p>
               </div>
             </div>
@@ -330,50 +323,52 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
           
           {/* Collapsed Logo */}
           {isCollapsed && (
-            <div className="flex justify-center mb-8 pb-6 border-b border-gray-100">
-              <div className="h-10 w-10 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center shadow-md">
-                <Navigation className="h-6 w-6 text-white" />
+            <div className="flex justify-center mb-4 pb-3 border-b border-gray-100">
+              <div className="h-8 w-8 bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg flex items-center justify-center shadow-md">
+                <Navigation className="h-5 w-5 text-white" />
               </div>
             </div>
           )}
           
           {/* Navigation Menu */}
-          <nav className="space-y-2">
+          <nav className="flex-1 space-y-1">
             {availableItems.map(renderMenuItem)}
           </nav>
           
-          {/* User Profile & Sign Out */}
-          <div className="mt-8 border-t border-gray-100 pt-4">
+          {/* Bottom Section: User Profile & Access Level */}
+          <div className="mt-auto space-y-2 flex-shrink-0">
+            {/* User Profile & Sign Out */}
+            <div className="border-t border-gray-100 pt-2">
             {isCollapsed ? (
-              <div className="flex flex-col space-y-2">
+              <div className="flex flex-col space-y-1">
                 <Button 
                   variant="ghost" 
                   size="sm" 
-                  className="h-10 w-10 p-0 hover:bg-gray-100 mx-auto"
+                  className="h-8 w-8 p-0 hover:bg-gray-100 mx-auto"
                   title={userDisplayName}
                 >
-                  <User className="h-5 w-5 text-gray-600" />
+                  <User className="h-4 w-4 text-gray-600" />
                 </Button>
                 <Button 
                   variant="ghost" 
                   size="sm" 
                   onClick={handleSignOut}
-                  className="h-10 w-10 p-0 hover:bg-red-50 text-red-600 mx-auto"
+                  className="h-8 w-8 p-0 hover:bg-red-50 text-red-600 mx-auto"
                   title="Sign Out"
                 >
-                  <LogOut className="h-5 w-5" />
+                  <LogOut className="h-4 w-4" />
                 </Button>
               </div>
             ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="w-full flex items-center space-x-3 h-12 px-3 hover:bg-gray-50 justify-start">
-                    <div className="h-9 w-9 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center shadow-sm">
-                      <User className="h-5 w-5 text-blue-600" />
+                  <Button variant="ghost" className="w-full flex items-center space-x-2 h-10 px-2 hover:bg-gray-50 justify-start">
+                    <div className="h-7 w-7 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center shadow-sm">
+                      <User className="h-4 w-4 text-blue-600" />
                     </div>
                     <div className="text-left flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{userDisplayName}</p>
-                      <p className="text-xs text-gray-500 capitalize font-medium">{userRole}</p>
+                      <p className="text-xs font-semibold text-gray-900 truncate">{userDisplayName}</p>
+                      <p className="text-xs text-gray-500 capitalize">{userRole}</p>
                     </div>
                   </Button>
                 </DropdownMenuTrigger>
@@ -397,38 +392,39 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
           
           {/* Access Level Card */}
           {!isCollapsed && userType === 'admin' && adminRole && (
-            <div className="mt-6 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 dashboard-smooth-transition hover:shadow-sm">
-              <div className="flex items-center space-x-3 mb-3">
-                <div className="h-8 w-8 bg-gradient-to-br from-blue-600 to-blue-700 rounded-full flex items-center justify-center">
-                  <Shield className="h-4 w-4 text-white" />
+            <div className="p-3 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-100">
+              <div className="flex items-center space-x-2 mb-2">
+                <div className="h-6 w-6 bg-gradient-to-br from-blue-600 to-blue-700 rounded-full flex items-center justify-center">
+                  <Shield className="h-3 w-3 text-white" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-900">Access Level</h3>
-                  <p className="text-sm text-blue-700 font-medium capitalize">{adminRole}</p>
+                  <h3 className="text-xs font-semibold text-gray-900">Access Level</h3>
+                  <p className="text-xs text-blue-700 font-medium capitalize">{adminRole}</p>
                 </div>
               </div>
               {adminRole === 'superadmin' && (
-                <div className="mt-2 px-2 py-1 bg-blue-100 rounded-md">
+                <div className="px-2 py-1 bg-blue-100 rounded-md">
                   <p className="text-xs text-blue-700 font-medium">🔐 Full System Access</p>
                 </div>
               )}
               {adminRole === 'regional' && (
-                <div className="mt-2 px-2 py-1 bg-green-100 rounded-md">
+                <div className="px-2 py-1 bg-green-100 rounded-md">
                   <p className="text-xs text-green-700 font-medium">🌍 MIMAROPA Region</p>
                 </div>
               )}
               {adminRole === 'provincial' && (
-                <div className="mt-2 px-2 py-1 bg-yellow-100 rounded-md">
+                <div className="px-2 py-1 bg-yellow-100 rounded-md">
                   <p className="text-xs text-yellow-700 font-medium">🏛️ Provincial Level</p>
                 </div>
               )}
               {adminRole === 'station' && (
-                <div className="mt-2 px-2 py-1 bg-purple-100 rounded-md">
+                <div className="px-2 py-1 bg-purple-100 rounded-md">
                   <p className="text-xs text-purple-700 font-medium">🏢 Station Level</p>
                 </div>
               )}
             </div>
           )}
+          </div>
         </div>
       </aside>
     </>
