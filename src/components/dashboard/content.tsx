@@ -7,6 +7,7 @@ import { PersonnelCreationForm } from './personnel-creation-form'
 import { ManageUsers } from './manage-users'
 import { AuditLogsViewer } from './audit-logs-viewer'
 import { LiveMonitoring } from './live-monitoring'
+import { GeofencingContent } from './geofencing'
 import { Badge } from '@/components/ui/badge'
 import { Users, Shield, MapPin, BarChart3 } from 'lucide-react'
 
@@ -64,6 +65,11 @@ export function DashboardContent({ activeTab }: DashboardContentProps) {
   // Live Monitoring Page
   if (activeTab === 'live-monitoring') {
     return <LiveMonitoring />
+  }
+
+  // Geofencing Page
+  if (activeTab === 'geofencing') {
+    return <GeofencingContent />
   }
 
   // Analytics Page

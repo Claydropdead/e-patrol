@@ -70,6 +70,11 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
     }
   }
 
+  const handleNavigation = (itemId: string) => {
+    onTabChange(itemId)
+    closeMobileMenu()
+  }
+
   const handleSignOut = async () => {
     try {
       await signOut()
@@ -131,6 +136,13 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
       id: 'live-monitoring',
       label: 'Live Monitoring',
       icon: MapPin,
+      available: ['superadmin', 'regional', 'provincial', 'station'],
+      type: 'item'
+    },
+    {
+      id: 'geofencing',
+      label: 'Geofencing',
+      icon: Navigation,
       available: ['superadmin', 'regional', 'provincial', 'station'],
       type: 'item'
     },
@@ -217,8 +229,7 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
                         isChildActive && 'bg-blue-100 text-blue-800 shadow-lg border-l-4 border-blue-600 font-semibold'
                       )}
                       onClick={() => {
-                        onTabChange(child.id)
-                        closeMobileMenu()
+                        handleNavigation(child.id)
                       }}
                     >
                       <ChildIcon className="mr-2 h-3 w-3 flex-shrink-0" />
@@ -243,8 +254,7 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
           activeTab === item.id && 'bg-blue-100 text-blue-800 shadow-md border-l-4 border-blue-500 font-semibold'
         )}
         onClick={() => {
-          onTabChange(item.id)
-          closeMobileMenu()
+          handleNavigation(item.id)
         }}
         title={isCollapsed ? item.label : undefined}
       >
