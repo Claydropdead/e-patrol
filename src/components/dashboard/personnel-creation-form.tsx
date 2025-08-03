@@ -44,10 +44,19 @@ export function PersonnelCreationForm() {
     
     setLoading(true)
     try {
+      // Get the current session for authentication
+      const supabase = createClient()
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      
+      if (sessionError || !session?.access_token) {
+        throw new Error('Authentication failed - please login again')
+      }
+      
       const response = await fetch('/api/personnel/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           rank: formData.rank,
