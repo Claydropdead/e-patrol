@@ -135,6 +135,13 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
       type: 'item'
     },
     {
+      id: 'live-map',
+      label: 'Live Map',
+      icon: Navigation,
+      available: ['superadmin', 'regional', 'provincial', 'station'],
+      type: 'item'
+    },
+    {
       id: 'analytics',
       label: 'Analytics',
       icon: BarChart3,

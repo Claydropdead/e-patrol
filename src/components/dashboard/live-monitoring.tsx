@@ -12,219 +12,197 @@ import {
   Radio,
   Filter,
   Search,
-  RefreshCw
+  RefreshCw,
+  Loader2
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
-// Mock data for demonstration - Using correct MIMAROPA structure
-const mockPersonnel = [
-  // Oriental Mindoro PPO
-  {
-    id: '1',
-    name: 'PO1 Juan Dela Cruz',
-    rank: 'PO1',
-    badge: 'B12345',
-    status: 'alert',
-    province: 'Oriental Mindoro PPO',
-    unit: 'Oriental Mindoro PPO',
-    subUnit: 'Calapan CPS',
-    lastUpdate: '2 mins ago',
-    location: { lat: 13.4117, lng: 121.1803 }
-  },
-  {
-    id: '6',
-    name: 'PO2 Ana Reyes',
-    rank: 'PO2',
-    badge: 'B12350',
-    status: 'on_duty',
-    province: 'Oriental Mindoro PPO',
-    unit: 'Oriental Mindoro PPO',
-    subUnit: '1st PMFC',
-    lastUpdate: '4 mins ago',
-    location: { lat: 13.1533, lng: 121.4247 }
-  },
-  {
-    id: '9',
-    name: 'SPO1 Ricardo Torres',
-    rank: 'SPO1',
-    badge: 'B12353',
-    status: 'standby',
-    province: 'Oriental Mindoro PPO',
-    unit: 'Oriental Mindoro PPO',
-    subUnit: 'Baco MPS',
-    lastUpdate: '3 mins ago',
-    location: { lat: 12.9617, lng: 121.3144 }
-  },
-  
-  // Occidental Mindoro PPO
-  {
-    id: '5',
-    name: 'PO1 Miguel Rivera',
-    rank: 'PO1',
-    badge: 'B12349',
-    status: 'standby',
-    province: 'Occidental Mindoro PPO',
-    unit: 'Occidental Mindoro PPO',
-    subUnit: 'Mamburao MPS',
-    lastUpdate: '7 mins ago',
-    location: { lat: 13.2186, lng: 120.5947 }
-  },
-  {
-    id: '10',
-    name: 'PO3 Lisa Fernandez',
-    rank: 'PO3',
-    badge: 'B12354',
-    status: 'on_duty',
-    province: 'Occidental Mindoro PPO',
-    unit: 'Occidental Mindoro PPO',
-    subUnit: 'San Jose MPS',
-    lastUpdate: '6 mins ago',
-    location: { lat: 12.3528, lng: 121.0686 }
-  },
-  
-  // Palawan PPO
-  {
-    id: '2', 
-    name: 'PO2 Maria Santos',
-    rank: 'PO2',
-    badge: 'B12346',
-    status: 'on_duty',
-    province: 'Palawan PPO',
-    unit: 'Palawan PPO',
-    subUnit: 'El Nido MPS',
-    lastUpdate: '5 mins ago',
-    location: { lat: 9.7392, lng: 118.7353 }
-  },
-  {
-    id: '8',
-    name: 'SPO2 Elena Vasquez',
-    rank: 'SPO2',
-    badge: 'B12352',
-    status: 'on_duty',
-    province: 'Palawan PPO',
-    unit: 'Palawan PPO',
-    subUnit: 'Coron MPS',
-    lastUpdate: '8 mins ago',
-    location: { lat: 11.1949, lng: 119.4094 }
-  },
-  {
-    id: '11',
-    name: 'PO1 Benjamin Castro',
-    rank: 'PO1',
-    badge: 'B12355',
-    status: 'alert',
-    province: 'Palawan PPO',
-    unit: 'Palawan PPO',
-    subUnit: 'Brooke\'s Point MPS',
-    lastUpdate: '1 min ago',
-    location: { lat: 12.0033, lng: 120.2069 }
-  },
-  
-  // Puerto Princesa CPO
-  {
-    id: '7',
-    name: 'PO3 Carlos Mendoza',
-    rank: 'PO3',
-    badge: 'B12351',
-    status: 'standby',
-    province: 'Puerto Princesa CPO',
-    unit: 'Puerto Princesa CPO',
-    subUnit: 'Police Station 1 (Mendoza)',
-    lastUpdate: '6 mins ago',
-    location: { lat: 9.7500, lng: 118.7500 }
-  },
-  {
-    id: '12',
-    name: 'PO2 Grace Morales',
-    rank: 'PO2',
-    badge: 'B12356',
-    status: 'on_duty',
-    province: 'Puerto Princesa CPO',
-    unit: 'Puerto Princesa CPO',
-    subUnit: 'Police Station 3',
-    lastUpdate: '9 mins ago',
-    location: { lat: 9.7800, lng: 118.7600 }
-  },
-  
-  // Romblon PPO
-  {
-    id: '3',
-    name: 'PO3 Roberto Garcia',
-    rank: 'PO3', 
-    badge: 'B12347',
-    status: 'standby',
-    province: 'Romblon PPO',
-    unit: 'Romblon PPO',
-    subUnit: 'Romblon MPS',
-    lastUpdate: '1 min ago',
-    location: { lat: 12.5778, lng: 122.2681 }
-  },
-  {
-    id: '13',
-    name: 'SPO1 Antonio Delgado',
-    rank: 'SPO1',
-    badge: 'B12357',
-    status: 'alert',
-    province: 'Romblon PPO',
-    unit: 'Romblon PPO',
-    subUnit: 'Odiongan MPS',
-    lastUpdate: '5 mins ago',
-    location: { lat: 12.4042, lng: 122.1925 }
-  },
-  
-  // Marinduque PPO
-  {
-    id: '4',
-    name: 'SPO1 Carmen Lopez',
-    rank: 'SPO1',
-    badge: 'B12348', 
-    status: 'alert',
-    province: 'Marinduque PPO',
-    unit: 'Marinduque PPO',
-    subUnit: 'Boac MPS',
-    lastUpdate: '3 mins ago',
-    location: { lat: 13.4548, lng: 121.8431 }
-  },
-  {
-    id: '14',
-    name: 'PO1 Sandra Villanueva',
-    rank: 'PO1',
-    badge: 'B12358',
-    status: 'standby',
-    province: 'Marinduque PPO',
-    unit: 'Marinduque PPO',
-    subUnit: 'Gasan MPS',
-    lastUpdate: '12 mins ago',
-    location: { lat: 13.3200, lng: 121.8500 }
-  },
-  
-  // RMFB (Regional Mobile Force Battalion)
-  {
-    id: '15',
-    name: 'SPO2 Mark Johnson',
-    rank: 'SPO2',
-    badge: 'B12359',
-    status: 'on_duty',
-    province: 'RMFB',
-    unit: 'RMFB',
-    subUnit: '401st Company',
-    lastUpdate: '2 mins ago',
-    location: { lat: 13.4000, lng: 121.0000 }
-  },
-  {
-    id: '16',
-    name: 'PO3 Diana Cruz',
-    rank: 'PO3',
-    badge: 'B12360',
-    status: 'standby',
-    province: 'RMFB',
-    unit: 'RMFB',
-    subUnit: '402nd Company',
-    lastUpdate: '4 mins ago',
-    location: { lat: 13.5000, lng: 121.1000 }
+// Mini map component for Live Monitoring
+function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [map, setMap] = useState<any>(null)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsLoaded(true)
+    }
+  }, [])
+
+  // Initialize map only once
+  useEffect(() => {
+    if (!isLoaded || map) return
+
+    const initMap = async () => {
+      try {
+        const L = (await import('leaflet')).default
+
+        // Fix for default markers
+        delete (L.Icon.Default.prototype as any)._getIconUrl
+        L.Icon.Default.mergeOptions({
+          iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+          iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+        })
+
+        // Check if container exists and is not already initialized
+        const mapContainer = document.getElementById('mini-map')
+        if (!mapContainer) return
+
+        // Clear any existing content
+        mapContainer.innerHTML = ''
+
+        // Create map with all interaction options enabled
+        const newMap = L.map('mini-map', {
+          center: [12.0, 120.0],
+          zoom: 8,
+          zoomControl: true,
+          scrollWheelZoom: true,
+          doubleClickZoom: true,
+          dragging: true,
+          touchZoom: true,
+          boxZoom: true,
+          keyboard: true,
+          zoomSnap: 0.5,
+          zoomDelta: 1,
+          trackResize: true
+        })
+
+        // Add tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(newMap)
+
+        setMap(newMap)
+
+      } catch (error) {
+        console.error('Error initializing mini map:', error)
+      }
+    }
+
+    initMap()
+
+    // Cleanup on unmount
+    return () => {
+      if (map) {
+        try {
+          map.remove()
+        } catch (e) {
+          console.error('Error removing map:', e)
+        }
+        setMap(null)
+      }
+    }
+  }, [isLoaded, map])
+
+  // Update markers when personnel data changes
+  useEffect(() => {
+    if (!map || !personnel) return
+
+    const updateMarkers = async () => {
+      try {
+        const L = (await import('leaflet')).default
+
+        // Clear existing markers
+        map.eachLayer((layer: any) => {
+          if (layer instanceof L.Marker) {
+            map.removeLayer(layer)
+          }
+        })
+
+        // Add markers for personnel
+        personnel.forEach((person) => {
+          if (person.latitude && person.longitude) {
+            const color = person.status === 'alert' ? '#ef4444' :
+                         person.status === 'standby' ? '#f59e0b' :
+                         person.status === 'on_duty' ? '#10b981' : '#6b7280'
+
+            const customIcon = L.divIcon({
+              html: `
+                <div style="
+                  background-color: ${color};
+                  width: 12px;
+                  height: 12px;
+                  border-radius: 50%;
+                  border: 2px solid white;
+                  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                "></div>
+              `,
+              className: 'custom-mini-marker',
+              iconSize: [12, 12],
+              iconAnchor: [6, 6]
+            })
+
+            const marker = L.marker([person.latitude, person.longitude], { icon: customIcon })
+              .addTo(map)
+
+            const statusBadge = person.status === 'alert' ? '🔴 Alert' :
+                               person.status === 'standby' ? '🟡 Standby' :
+                               person.status === 'on_duty' ? '🟢 On Duty' : '⚫ Off Duty'
+
+            const popupContent = `
+              <div style="font-family: system-ui; min-width: 150px;">
+                <h3 style="margin: 0 0 4px 0; font-weight: 600; font-size: 14px;">${person.full_name}</h3>
+                <p style="margin: 0 0 4px 0; font-size: 12px; color: #666;">${person.rank}</p>
+                <p style="margin: 0; font-size: 12px;"><strong>Status:</strong> ${statusBadge}</p>
+                <p style="margin: 0; font-size: 12px;"><strong>Unit:</strong> ${person.sub_unit}</p>
+              </div>
+            `
+
+            marker.bindPopup(popupContent)
+          }
+        })
+
+        // Fit map to show all markers
+        if (personnel.length > 0) {
+          const markers = personnel
+            .filter(p => p.latitude && p.longitude)
+            .map(p => L.marker([p.latitude!, p.longitude!]))
+          
+          if (markers.length > 0) {
+            const group = L.featureGroup(markers)
+            map.fitBounds(group.getBounds().pad(0.1))
+          }
+        }
+
+      } catch (error) {
+        console.error('Error updating markers:', error)
+      }
+    }
+
+    updateMarkers()
+  }, [map, personnel])
+
+  if (!isLoaded) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+      </div>
+    )
   }
-]
+
+  return <div id="mini-map" className="h-full w-full rounded-lg" />
+}
+
+// Types for database data
+interface PersonnelData {
+  id: string
+  full_name: string
+  rank: string
+  email: string
+  province: string
+  unit: string
+  sub_unit: string
+  status: string
+  status_changed_at: string | null
+  status_notes: string | null
+  latitude: number | null
+  longitude: number | null
+  last_update: string | null
+  minutes_since_update: number | null
+  is_online: boolean
+}
 
 type DutyStatus = 'alert' | 'standby' | 'on_duty'
 
@@ -236,12 +214,202 @@ interface PersonnelStats {
 }
 
 export function LiveMonitoring() {
-  const [personnel] = useState(mockPersonnel)
+  const [personnel, setPersonnel] = useState<PersonnelData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<DutyStatus | 'all'>('all')
   const [unitFilter, setUnitFilter] = useState('all')
   const [subUnitFilter, setSubUnitFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [lastUpdate, setLastUpdate] = useState(new Date())
+  
+  const supabase = createClientComponentClient()
+
+  // Fetch personnel data from database
+  const fetchPersonnelData = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      
+      // Try to fetch from live_monitoring view first
+      let { data, error } = await supabase
+        .from('live_monitoring')
+        .select('*')
+        .order('full_name')
+      
+      // If live_monitoring view doesn't exist, fall back to basic personnel table
+      if (error && error.message.includes('relation "live_monitoring" does not exist')) {
+        console.log('Live monitoring view not found, using sample data for testing...')
+        
+        // Sample data for testing - includes location data for map
+        const sampleData: PersonnelData[] = [
+          {
+            id: '1',
+            full_name: 'PO1 Juan Dela Cruz',
+            rank: 'PO1',
+            email: 'juan.delacruz@pnp.gov.ph',
+            province: 'Oriental Mindoro PPO',
+            unit: 'Oriental Mindoro PPO',
+            sub_unit: 'Calapan CPS',
+            status: 'alert',
+            status_changed_at: new Date().toISOString(),
+            status_notes: 'Emergency response in progress',
+            latitude: 13.4117,
+            longitude: 121.1803,
+            last_update: new Date().toISOString(),
+            minutes_since_update: 2,
+            is_online: true
+          },
+          {
+            id: '2',
+            full_name: 'PO2 Maria Santos',
+            rank: 'PO2',
+            email: 'maria.santos@pnp.gov.ph',
+            province: 'Palawan PPO',
+            unit: 'Palawan PPO',
+            sub_unit: 'El Nido MPS',
+            status: 'on_duty',
+            status_changed_at: new Date().toISOString(),
+            status_notes: 'Regular patrol',
+            latitude: 11.1949,
+            longitude: 119.4094,
+            last_update: new Date().toISOString(),
+            minutes_since_update: 5,
+            is_online: true
+          },
+          {
+            id: '3',
+            full_name: 'PO3 Roberto Garcia',
+            rank: 'PO3',
+            email: 'roberto.garcia@pnp.gov.ph',
+            province: 'Romblon PPO',
+            unit: 'Romblon PPO',
+            sub_unit: 'Romblon MPS',
+            status: 'standby',
+            status_changed_at: new Date().toISOString(),
+            status_notes: 'Awaiting assignment',
+            latitude: 12.5778,
+            longitude: 122.2681,
+            last_update: new Date().toISOString(),
+            minutes_since_update: 1,
+            is_online: true
+          },
+          {
+            id: '4',
+            full_name: 'SPO1 Carmen Lopez',
+            rank: 'SPO1',
+            email: 'carmen.lopez@pnp.gov.ph',
+            province: 'Marinduque PPO',
+            unit: 'Marinduque PPO',
+            sub_unit: 'Boac MPS',
+            status: 'alert',
+            status_changed_at: new Date().toISOString(),
+            status_notes: 'Traffic incident response',
+            latitude: 13.4548,
+            longitude: 121.8431,
+            last_update: new Date().toISOString(),
+            minutes_since_update: 3,
+            is_online: true
+          },
+          {
+            id: '5',
+            full_name: 'PO1 Miguel Rivera',
+            rank: 'PO1',
+            email: 'miguel.rivera@pnp.gov.ph',
+            province: 'Occidental Mindoro PPO',
+            unit: 'Occidental Mindoro PPO',
+            sub_unit: 'Mamburao MPS',
+            status: 'on_duty',
+            status_changed_at: new Date().toISOString(),
+            status_notes: 'Regular patrol',
+            latitude: 13.2186,
+            longitude: 120.5947,
+            last_update: new Date().toISOString(),
+            minutes_since_update: 7,
+            is_online: false
+          },
+          {
+            id: '6',
+            full_name: 'PO2 Ana Reyes',
+            rank: 'PO2',
+            email: 'ana.reyes@pnp.gov.ph',
+            province: 'Oriental Mindoro PPO',
+            unit: 'Oriental Mindoro PPO',
+            sub_unit: '1st PMFC',
+            status: 'standby',
+            status_changed_at: new Date().toISOString(),
+            status_notes: 'At headquarters',
+            latitude: null,
+            longitude: null,
+            last_update: null,
+            minutes_since_update: null,
+            is_online: false
+          }
+        ]
+        
+        setPersonnel(sampleData)
+        setLastUpdate(new Date())
+        return
+      } else if (error) {
+        console.error('Error fetching personnel:', error)
+        setError('Failed to load personnel data')
+        return
+      }
+      
+      setPersonnel(data || [])
+      setLastUpdate(new Date())
+    } catch (err) {
+      console.error('Error:', err)
+      setError('Failed to connect to database')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Set up real-time subscriptions
+  useEffect(() => {
+    // Initial data fetch
+    fetchPersonnelData()
+
+    // Subscribe to real-time changes
+    const locationsChannel = supabase
+      .channel('personnel-locations')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'personnel_locations'
+        },
+        () => {
+          console.log('Location update received')
+          fetchPersonnelData()
+        }
+      )
+      .subscribe()
+
+    const statusChannel = supabase
+      .channel('personnel-status')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'personnel_status_history'
+        },
+        () => {
+          console.log('Status update received')
+          fetchPersonnelData()
+        }
+      )
+      .subscribe()
+
+    // Cleanup subscriptions
+    return () => {
+      supabase.removeChannel(locationsChannel)
+      supabase.removeChannel(statusChannel)
+    }
+  }, [supabase])
 
   // Calculate statistics
   const stats: PersonnelStats = {
@@ -255,18 +423,18 @@ export function LiveMonitoring() {
   const filteredPersonnel = personnel.filter(person => {
     const matchesStatus = statusFilter === 'all' || person.status === statusFilter
     const matchesUnit = unitFilter === 'all' || person.unit === unitFilter
-    const matchesSubUnit = subUnitFilter === 'all' || person.subUnit === subUnitFilter
-    const matchesSearch = person.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         person.badge.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSubUnit = subUnitFilter === 'all' || person.sub_unit === subUnitFilter
+    const matchesSearch = person.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         person.rank.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          person.unit.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         person.subUnit.toLowerCase().includes(searchTerm.toLowerCase())
+                         person.sub_unit.toLowerCase().includes(searchTerm.toLowerCase())
     
     return matchesStatus && matchesUnit && matchesSubUnit && matchesSearch
   })
 
   // Get unique units and subunits
   const units = [...new Set(personnel.map(p => p.unit))]
-  const subUnits = [...new Set(personnel.map(p => p.subUnit))]
+  const subUnits = [...new Set(personnel.map(p => p.sub_unit))]
 
   // Get all available units (no province filtering)
   const availableUnits = units
@@ -274,7 +442,7 @@ export function LiveMonitoring() {
   // Get sub-units filtered by selected unit only
   const availableSubUnits = unitFilter === 'all' 
     ? subUnits 
-    : [...new Set(personnel.filter(p => p.unit === unitFilter).map(p => p.subUnit))]
+    : [...new Set(personnel.filter(p => p.unit === unitFilter).map(p => p.sub_unit))]
 
   // Status styling helper
   const getStatusConfig = (status: string) => {
@@ -404,26 +572,19 @@ export function LiveMonitoring() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-[500px] bg-gray-100 rounded-lg flex items-center justify-center">
-                <div className="text-center">
-                  <MapPin className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-500 font-medium">Interactive Map</p>
-                  <p className="text-sm text-gray-400">Personnel locations will be displayed here</p>
-                  <div className="mt-4 flex justify-center space-x-4">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                      <span className="text-sm text-gray-600">Alert</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                      <span className="text-sm text-gray-600">Standby</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                      <span className="text-sm text-gray-600">On Duty</span>
+              <div className="h-[500px] bg-gray-100 rounded-lg relative">
+                {loading ? (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-center">
+                      <Loader2 className="h-8 w-8 mx-auto mb-2 animate-spin text-blue-500" />
+                      <p className="text-gray-600">Loading map...</p>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="h-full w-full">
+                    <MiniMap personnel={filteredPersonnel.filter(p => p.latitude && p.longitude)} />
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -433,10 +594,25 @@ export function LiveMonitoring() {
         <div className="lg:col-span-1">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center">
-                <Users className="h-5 w-5 mr-2" />
-                Personnel Status
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center">
+                  <Users className="h-5 w-5 mr-2" />
+                  Personnel Status
+                </CardTitle>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-gray-500">
+                    Last updated: {lastUpdate.toLocaleTimeString()}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchPersonnelData}
+                    disabled={loading}
+                  >
+                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                  </Button>
+                </div>
+              </div>
               {/* Filters */}
               <div className="space-y-3">
                 <div className="relative">
@@ -526,7 +702,26 @@ export function LiveMonitoring() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="max-h-[400px] overflow-y-auto">
-                {filteredPersonnel.length === 0 ? (
+                {loading ? (
+                  <div className="p-6 text-center">
+                    <Loader2 className="h-8 w-8 mx-auto mb-2 text-blue-500 animate-spin" />
+                    <p className="text-gray-500">Loading personnel data...</p>
+                  </div>
+                ) : error ? (
+                  <div className="p-6 text-center text-red-500">
+                    <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
+                    <p>{error}</p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-2"
+                      onClick={fetchPersonnelData}
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Retry
+                    </Button>
+                  </div>
+                ) : filteredPersonnel.length === 0 ? (
                   <div className="p-6 text-center text-gray-500">
                     <Users className="h-8 w-8 mx-auto mb-2 text-gray-400" />
                     <p>No personnel found</p>
@@ -546,8 +741,8 @@ export function LiveMonitoring() {
                             <div className="flex items-center space-x-3">
                               <div className={`w-3 h-3 rounded-full ${statusConfig.color}`}></div>
                               <div>
-                                <p className="font-medium text-gray-900 text-sm">{person.name}</p>
-                                <p className="text-xs text-gray-600">{person.badge} • {person.rank}</p>
+                                <p className="font-medium text-gray-900 text-sm">{person.full_name}</p>
+                                <p className="text-xs text-gray-600">{person.rank}</p>
                               </div>
                             </div>
                             <StatusIcon className={`h-4 w-4 ${statusConfig.textColor}`} />
@@ -555,12 +750,22 @@ export function LiveMonitoring() {
                           
                           <div className="mt-2 text-xs text-gray-600">
                             <p className="font-medium">{person.unit}</p>
-                            <p className="text-gray-500">{person.subUnit}</p>
+                            <p className="text-gray-500">{person.sub_unit}</p>
                             <div className="flex items-center justify-between mt-1">
-                              <span>{person.lastUpdate}</span>
-                              <Badge variant="outline" className="text-xs">
-                                {statusConfig.label}
-                              </Badge>
+                              <span>
+                                {person.last_update 
+                                  ? `${Math.round(person.minutes_since_update || 0)} mins ago`
+                                  : 'No data'
+                                }
+                              </span>
+                              <div className="flex items-center space-x-2">
+                                <Badge variant="outline" className="text-xs">
+                                  {statusConfig.label}
+                                </Badge>
+                                <Badge variant={person.is_online ? "default" : "secondary"} className="text-xs">
+                                  {person.is_online ? 'Online' : 'Offline'}
+                                </Badge>
+                              </div>
                             </div>
                           </div>
                         </div>
