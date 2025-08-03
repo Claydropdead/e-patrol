@@ -6,6 +6,7 @@ import { AdminCreationForm } from './admin-creation-form'
 import { PersonnelCreationForm } from './personnel-creation-form'
 import { ManageUsers } from './manage-users'
 import { AuditLogsViewer } from './audit-logs-viewer'
+import { LiveMonitoring } from './live-monitoring'
 import { Badge } from '@/components/ui/badge'
 import { Users, Shield, MapPin, BarChart3 } from 'lucide-react'
 
@@ -62,30 +63,7 @@ export function DashboardContent({ activeTab }: DashboardContentProps) {
 
   // Live Monitoring Page
   if (activeTab === 'live-monitoring') {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Live Monitoring</h1>
-          <p className="text-gray-600 mt-2">Real-time location tracking of personnel in the field</p>
-        </div>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <MapPin className="h-5 w-5" />
-              Personnel Location Tracking
-            </CardTitle>
-            <CardDescription>
-              Real-time GPS monitoring of active personnel
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Coming soon: Interactive map with live personnel locations, status updates, and emergency alerts.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    )
+    return <LiveMonitoring />
   }
 
   // Analytics Page
