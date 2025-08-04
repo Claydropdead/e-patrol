@@ -223,6 +223,7 @@ export function LiveMonitoring() {
   const [subUnitFilter, setSubUnitFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [lastUpdate, setLastUpdate] = useState(new Date())
+  const loadingRef = useRef(false)
   
   const supabase = createClient()
 
@@ -230,7 +231,10 @@ export function LiveMonitoring() {
   const fetchPersonnelData = async () => {
     try {
       setLoading(true)
+      loadingRef.current = true
       setError(null)
+      
+      console.log('🔍 Fetching personnel data from live_monitoring view...')
       
       // Try to fetch from live_monitoring view first
       const { data, error } = await supabase
@@ -238,179 +242,158 @@ export function LiveMonitoring() {
         .select('*')
         .order('full_name')
       
+      console.log('📊 Live monitoring query result:', { data, error })
+      
       // If live_monitoring view doesn't exist, fall back to basic personnel table
-      if (error && error.message.includes('relation "live_monitoring" does not exist')) {
-        console.log('Live monitoring view not found, using sample data for testing...')
+      if (error && (error.message.includes('relation "live_monitoring" does not exist') || 
+                   error.message.includes('does not exist') ||
+                   error.code === 'PGRST116')) {
+        console.log('⚠️ Live monitoring view not found, trying personnel table...')
         
-        // Sample data for testing - includes location data for map
-        const sampleData: PersonnelData[] = [
-          {
-            id: '1',
-            full_name: 'PO1 Juan Dela Cruz',
-            rank: 'PO1',
-            email: 'juan.delacruz@pnp.gov.ph',
-            province: 'Oriental Mindoro PPO',
-            unit: 'Oriental Mindoro PPO',
-            sub_unit: 'Calapan CPS',
-            status: 'alert',
-            status_changed_at: new Date().toISOString(),
-            status_notes: 'Emergency response in progress',
-            latitude: 13.4117,
-            longitude: 121.1803,
-            last_update: new Date().toISOString(),
-            minutes_since_update: 2,
-            is_online: true
-          },
-          {
-            id: '2',
-            full_name: 'PO2 Maria Santos',
-            rank: 'PO2',
-            email: 'maria.santos@pnp.gov.ph',
-            province: 'Palawan PPO',
-            unit: 'Palawan PPO',
-            sub_unit: 'El Nido MPS',
-            status: 'on_duty',
-            status_changed_at: new Date().toISOString(),
-            status_notes: 'Regular patrol',
-            latitude: 11.1949,
-            longitude: 119.4094,
-            last_update: new Date().toISOString(),
-            minutes_since_update: 5,
-            is_online: true
-          },
-          {
-            id: '3',
-            full_name: 'PO3 Roberto Garcia',
-            rank: 'PO3',
-            email: 'roberto.garcia@pnp.gov.ph',
-            province: 'Romblon PPO',
-            unit: 'Romblon PPO',
-            sub_unit: 'Romblon MPS',
-            status: 'standby',
-            status_changed_at: new Date().toISOString(),
-            status_notes: 'Awaiting assignment',
-            latitude: 12.5778,
-            longitude: 122.2681,
-            last_update: new Date().toISOString(),
-            minutes_since_update: 1,
-            is_online: true
-          },
-          {
-            id: '4',
-            full_name: 'SPO1 Carmen Lopez',
-            rank: 'SPO1',
-            email: 'carmen.lopez@pnp.gov.ph',
-            province: 'Marinduque PPO',
-            unit: 'Marinduque PPO',
-            sub_unit: 'Boac MPS',
-            status: 'alert',
-            status_changed_at: new Date().toISOString(),
-            status_notes: 'Traffic incident response',
-            latitude: 13.4548,
-            longitude: 121.8431,
-            last_update: new Date().toISOString(),
-            minutes_since_update: 3,
-            is_online: true
-          },
-          {
-            id: '5',
-            full_name: 'PO1 Miguel Rivera',
-            rank: 'PO1',
-            email: 'miguel.rivera@pnp.gov.ph',
-            province: 'Occidental Mindoro PPO',
-            unit: 'Occidental Mindoro PPO',
-            sub_unit: 'Mamburao MPS',
-            status: 'on_duty',
-            status_changed_at: new Date().toISOString(),
-            status_notes: 'Regular patrol',
-            latitude: 13.2186,
-            longitude: 120.5947,
-            last_update: new Date().toISOString(),
-            minutes_since_update: 7,
-            is_online: false
-          },
-          {
-            id: '6',
-            full_name: 'PO2 Ana Reyes',
-            rank: 'PO2',
-            email: 'ana.reyes@pnp.gov.ph',
-            province: 'Oriental Mindoro PPO',
-            unit: 'Oriental Mindoro PPO',
-            sub_unit: '1st PMFC',
-            status: 'standby',
-            status_changed_at: new Date().toISOString(),
-            status_notes: 'At headquarters',
-            latitude: null,
-            longitude: null,
-            last_update: null,
-            minutes_since_update: null,
-            is_online: false
-          }
-        ]
+        // Try to fetch from personnel table instead
+        const { data: personnelData, error: personnelError } = await supabase
+          .from('personnel')
+          .select('id, full_name, rank, email, province, unit, sub_unit, is_active')
+          .eq('is_active', true)
+          .order('full_name')
         
-        setPersonnel(sampleData)
+        console.log('📊 Personnel query result:', { data: personnelData, error: personnelError })
+        
+        if (personnelError) {
+          console.error('❌ Personnel table also not accessible:', personnelError)
+          setError('Unable to access personnel data. Please check your database connection.')
+          return
+        }
+        
+        // Use personnel data as-is without live monitoring features
+        const transformedData: PersonnelData[] = (personnelData || []).map((person) => ({
+          ...person,
+          status: 'off_duty' as DutyStatus,
+          status_changed_at: null,
+          status_notes: null,
+          latitude: null,
+          longitude: null,
+          last_update: null,
+          minutes_since_update: null,
+          is_online: false
+        }))
+        
+        console.log('✅ Using personnel data (no live monitoring):', transformedData.length, 'records')
+        setPersonnel(transformedData)
         setLastUpdate(new Date())
         return
       } else if (error) {
-        console.error('Error fetching personnel:', error)
-        setError('Failed to load personnel data')
+        console.error('❌ Error fetching personnel:', error)
+        setError(`Failed to load personnel data: ${error.message}`)
         return
       }
       
+      console.log('✅ Live monitoring data loaded:', data?.length || 0, 'records')
       setPersonnel(data || [])
       setLastUpdate(new Date())
     } catch (err) {
-      console.error('Error:', err)
-      setError('Failed to connect to database')
+      console.error('❌ Fetch error:', err)
+      setError('Failed to connect to database. Please check your connection and try again.')
     } finally {
       setLoading(false)
+      loadingRef.current = false
+      console.log('✅ Data fetch completed')
     }
   }
 
-  // Set up real-time subscriptions
+  // Set up real-time subscriptions with error handling and timeout
   useEffect(() => {
     // Initial data fetch
     fetchPersonnelData()
 
-    // Subscribe to real-time changes
-    const locationsChannel = supabase
-      .channel('personnel-locations')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'personnel_locations'
-        },
-        () => {
-          console.log('Location update received')
-          fetchPersonnelData()
-        }
-      )
-      .subscribe()
+    // Set a timeout to ensure loading doesn't get stuck
+    const loadingTimeout = setTimeout(() => {
+      if (loadingRef.current) {
+        console.log('Loading timeout reached, stopping loading state')
+        setLoading(false)
+        loadingRef.current = false
+        setError('Connection timeout. Please check your network and try again.')
+      }
+    }, 5000) // 5 second timeout (reduced from 10)
 
-    const statusChannel = supabase
-      .channel('personnel-status')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'personnel_status_history'
-        },
-        () => {
-          console.log('Status update received')
-          fetchPersonnelData()
+    let locationsChannel: any = null
+    let statusChannel: any = null
+
+    const setupSubscriptions = async () => {
+      try {
+        // Check if personnel_locations table exists before subscribing
+        const { error: locationError } = await supabase
+          .from('personnel_locations')
+          .select('id')
+          .limit(1)
+        
+        if (!locationError) {
+          // Subscribe to real-time location changes
+          locationsChannel = supabase
+            .channel('personnel-locations')
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'personnel_locations'
+              },
+              () => {
+                console.log('Location update received')
+                fetchPersonnelData()
+              }
+            )
+            .subscribe()
+        } else {
+          console.log('personnel_locations table not available for real-time updates')
         }
-      )
-      .subscribe()
+
+        // Check if personnel_status_history table exists before subscribing
+        const { error: statusError } = await supabase
+          .from('personnel_status_history')
+          .select('id')
+          .limit(1)
+        
+        if (!statusError) {
+          statusChannel = supabase
+            .channel('personnel-status')
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'personnel_status_history'
+              },
+              () => {
+                console.log('Status update received')
+                fetchPersonnelData()
+              }
+            )
+            .subscribe()
+        } else {
+          console.log('personnel_status_history table not available for real-time updates')
+        }
+        
+      } catch (error) {
+        console.log('Real-time subscriptions setup failed:', error)
+        // Continue without real-time updates
+      }
+    }
+
+    // Set up subscriptions asynchronously
+    setupSubscriptions()
 
     // Cleanup subscriptions
     return () => {
-      supabase.removeChannel(locationsChannel)
-      supabase.removeChannel(statusChannel)
+      clearTimeout(loadingTimeout)
+      if (locationsChannel) {
+        supabase.removeChannel(locationsChannel)
+      }
+      if (statusChannel) {
+        supabase.removeChannel(statusChannel)
+      }
     }
-  }, [supabase])
+  }, []) // Remove supabase from dependencies to prevent infinite loop
 
   // Calculate statistics
   const stats: PersonnelStats = {
