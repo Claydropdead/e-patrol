@@ -6,7 +6,6 @@ import {
   MapPin, 
   Plus, 
   Search,
-  Users,
   Edit,
   Trash2,
   Eye,
@@ -18,8 +17,8 @@ import {
   UserX,
   Bell,
   Activity,
-  Play,
-  Square
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -347,15 +346,6 @@ const calculateDutyDuration = (startTime?: string, endTime?: string) => {
   }
 }
 
-// Helper function to check if all personnel have accepted
-const checkAllPersonnelAccepted = (beat: GeofenceBeat): boolean => {
-  if (!beat.personnelAcceptance) return false
-  
-  return beat.assignedPersonnel.every(person => 
-    beat.personnelAcceptance?.[person]?.status === 'accepted'
-  )
-}
-
 // Helper function to get violation details for a specific beat
 const getViolationDetailsForBeat = (beatId: string, violations: Violation[]): Violation[] => {
   return violations.filter(violation => violation.beatId === beatId)
@@ -363,8 +353,11 @@ const getViolationDetailsForBeat = (beatId: string, violations: Violation[]): Vi
 
 export function GeofencingContent() {
   const [selectedTab, setSelectedTab] = useState('beats')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedProvince, setSelectedProvince] = useState('all')
+  const [sortBy, setSortBy] = useState<'name' | 'province' | 'status' | 'violations'>('name')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [isCreateBeatOpen, setIsCreateBeatOpen] = useState(false)
   const [selectedBeat, setSelectedBeat] = useState<GeofenceBeat | null>(null)
   const [beats, setBeats] = useState<GeofenceBeat[]>(mockBeats)
@@ -373,6 +366,7 @@ export function GeofencingContent() {
   // Use refs to avoid stale closures and prevent infinite loops
   const beatsRef = useRef(beats)
   const violationsRef = useRef(violations)
+  const violationCounterRef = useRef(0)
   
   // Keep refs updated
   useEffect(() => {
@@ -395,11 +389,11 @@ export function GeofencingContent() {
             const exitDistance = activeBeat.radius + Math.floor(Math.random() * 200) + 50 // At least 50m outside radius
             
             const newViolation: Violation = {
-              id: `v_${Date.now()}`,
+              id: `v_${Date.now()}_${++violationCounterRef.current}`,
               beatId: activeBeat.id,
               beatName: activeBeat.name,
               personnelName: activeBeat.assignedPersonnel[Math.floor(Math.random() * activeBeat.assignedPersonnel.length)],
-              personnelId: `p_${Date.now()}`,
+              personnelId: `p_${Date.now()}_${violationCounterRef.current}`,
               type: 'exit', // Only exit violations for notifications
               timestamp: new Date().toISOString(),
               location: {
@@ -442,34 +436,6 @@ export function GeofencingContent() {
     return () => clearInterval(interval)
   }, [])
 
-  // Function to update beat status (simulating mobile actions)
-  const updateBeatStatus = (beatId: string, newStatus: GeofenceBeat['beatStatus'], reason?: string) => {
-    setBeats(prev => prev.map(beat => {
-      if (beat.id === beatId) {
-        const updates: Partial<GeofenceBeat> = { beatStatus: newStatus }
-        
-        if (newStatus === 'accepted') {
-          updates.acceptanceTime = new Date().toLocaleString()
-          
-          // Check if all personnel have accepted to auto-start
-          if (checkAllPersonnelAccepted(beat)) {
-            updates.beatStatus = 'in_progress'
-            updates.acceptanceTime = 'Auto-started when all accepted'
-          }
-        } else if (newStatus === 'declined') {
-          updates.declineReason = reason || 'No reason provided'
-        } else if (newStatus === 'in_progress') {
-          updates.dutyStartTime = new Date().toISOString()
-        } else if (newStatus === 'completed') {
-          updates.dutyEndTime = new Date().toISOString()
-        }
-        
-        return { ...beat, ...updates }
-      }
-      return beat
-    }))
-  }
-
   // Get unique provinces from MIMAROPA structure with error handling
   const provinces = React.useMemo(() => {
     try {
@@ -482,17 +448,64 @@ export function GeofencingContent() {
 
   const filteredBeats = React.useMemo(() => {
     try {
-      return beats.filter(beat => {
+      const filtered = beats.filter(beat => {
         const matchesSearch = beat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                             beat.location.address.toLowerCase().includes(searchTerm.toLowerCase())
+                             beat.location.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                             beat.assignedPersonnel.some(person => person.toLowerCase().includes(searchTerm.toLowerCase()))
         const matchesProvince = selectedProvince === 'all' || beat.province === selectedProvince
-        return matchesSearch && matchesProvince
+        
+        // Status filtering
+        let matchesStatus = true
+        if (statusFilter === 'active') {
+          matchesStatus = beat.status === 'active'
+        } else if (statusFilter === 'on-duty') {
+          matchesStatus = beat.beatStatus === 'in_progress'
+        } else if (statusFilter === 'pending') {
+          matchesStatus = beat.beatStatus === 'pending'
+        }
+        
+        return matchesSearch && matchesProvince && matchesStatus
       })
+
+      // Sort beats
+      const sorted = [...filtered].sort((a, b) => {
+        let aValue: string | number, bValue: string | number
+        
+        switch (sortBy) {
+          case 'name':
+            aValue = a.name.toLowerCase()
+            bValue = b.name.toLowerCase()
+            break
+          case 'province':
+            aValue = a.province.toLowerCase()
+            bValue = b.province.toLowerCase()
+            break
+          case 'status':
+            aValue = a.status
+            bValue = b.status
+            break
+          case 'violations':
+            aValue = a.violations || 0
+            bValue = b.violations || 0
+            break
+          default:
+            aValue = a.name.toLowerCase()
+            bValue = b.name.toLowerCase()
+        }
+        
+        if (sortOrder === 'asc') {
+          return aValue < bValue ? -1 : aValue > bValue ? 1 : 0
+        } else {
+          return aValue > bValue ? -1 : aValue < bValue ? 1 : 0
+        }
+      })
+
+      return sorted
     } catch (error) {
       console.error('Error filtering beats:', error)
       return beats
     }
-  }, [beats, searchTerm, selectedProvince])
+  }, [beats, searchTerm, selectedProvince, statusFilter, sortBy, sortOrder])
 
   return (
     <div className="space-y-6">
@@ -514,16 +527,16 @@ export function GeofencingContent() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <div className="p-2 bg-blue-100 rounded-lg">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
                 <Shield className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-600">Total Beats</p>
-                <p className="text-2xl font-bold text-gray-900">{beats.length}</p>
+                <p className="text-sm text-muted-foreground">Total Beats</p>
+                <p className="text-2xl font-bold">{beats.length}</p>
               </div>
             </div>
           </CardContent>
@@ -531,46 +544,30 @@ export function GeofencingContent() {
         
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <div className="p-2 bg-green-100 rounded-lg">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-green-100 dark:bg-green-900 rounded-lg">
                 <CheckCircle className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-600">Active Beats</p>
-                <p className="text-2xl font-bold text-gray-900">
+                <p className="text-sm text-muted-foreground">Active Beats</p>
+                <p className="text-2xl font-bold">
                   {beats.filter(b => b.status === 'active').length}
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <div className="p-2 bg-indigo-100 rounded-lg">
-                <Activity className="h-5 w-5 text-indigo-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">On Duty</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {beats.filter(b => b.beatStatus === 'in_progress').length}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
         
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center space-x-2">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Users className="h-5 w-5 text-purple-600" />
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-red-100 dark:bg-red-900 rounded-lg">
+                <Bell className="h-5 w-5 text-red-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-600">Assigned Personnel</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {new Set(beats.flatMap(b => b.assignedPersonnel)).size}
+                <p className="text-sm text-muted-foreground">Total Violations</p>
+                <p className="text-2xl font-bold">
+                  {violations.filter(v => v.status === 'pending').length}
                 </p>
               </div>
             </div>
@@ -579,7 +576,7 @@ export function GeofencingContent() {
       </div>
 
       {/* Search and Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className="flex flex-col lg:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
           <Input
@@ -589,98 +586,143 @@ export function GeofencingContent() {
             className="pl-10"
           />
         </div>
-        <Select value={selectedProvince} onValueChange={setSelectedProvince}>
-          <SelectTrigger className="w-full sm:w-48">
-            <SelectValue placeholder="All Provinces" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Provinces</SelectItem>
-            {provinces.map(province => (
-              <SelectItem key={province} value={province}>
-                {province}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Select value={selectedProvince} onValueChange={setSelectedProvince}>
+            <SelectTrigger className="w-full sm:w-48">
+              <SelectValue placeholder="All Provinces" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Provinces</SelectItem>
+              {provinces.map(province => (
+                <SelectItem key={province} value={province}>
+                  {province}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-full sm:w-40">
+              <SelectValue placeholder="Status Filter" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Beats</SelectItem>
+              <SelectItem value="active">Active Only</SelectItem>
+              <SelectItem value="on-duty">On Duty</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Tabs */}
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
         <TabsList>
           <TabsTrigger value="beats">Patrol Beats</TabsTrigger>
-          <TabsTrigger value="duty">Duty Management</TabsTrigger>
-          <TabsTrigger value="map">Map View</TabsTrigger>
         </TabsList>
 
         <TabsContent value="beats" className="space-y-4">
-          <div className="grid gap-4">
-            {filteredBeats.map(beat => (
-              <BeatCard 
-                key={beat.id} 
-                beat={beat} 
-                violations={violations}
-                onEdit={() => setSelectedBeat(beat)}
-                onView={() => setSelectedBeat(beat)}
-              />
-            ))}
-            {filteredBeats.length === 0 && (
-              <Card>
-                <CardContent className="p-8 text-center">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                Patrol Beats Overview
+              </CardTitle>
+              <CardDescription>
+                Manage and monitor patrol beats across MIMAROPA region
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {filteredBeats.length === 0 ? (
+                <div className="text-center py-12">
                   <MapPin className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No beats found</h3>
                   <p className="text-gray-600">Try adjusting your search criteria or create a new beat.</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="duty" className="space-y-4">
-          <div className="grid gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="h-5 w-5" />
-                  Beat Assignment & Duty Status
-                </CardTitle>
-                <CardDescription>
-                  Monitor personnel duty acceptance and track active assignments
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {beats.map(beat => (
-                    <DutyStatusCard 
-                      key={beat.id} 
-                      beat={beat} 
-                      onUpdateStatus={updateBeatStatus}
-                    />
-                  ))}
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="map" className="space-y-4">
-          <Card>
-            <CardContent className="p-8 text-center">
-              <MapPin className="h-24 w-24 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Interactive Map</h3>
-              <p className="text-gray-600 mb-4">
-                Real-time map view showing all patrol beats and personnel locations.
-                Beat radii will also appear on the Live Monitoring page for real-time tracking.
-              </p>
-              <div className="space-y-2">
-                <Button variant="outline">
-                  <MapPin className="h-4 w-4 mr-2" />
-                  Open Full Map
-                </Button>
-                <p className="text-sm text-gray-500">
-                  Note: Geofence radii are automatically displayed on the Live Monitoring page
-                  when personnel are actively tracking within beats.
-                </p>
-              </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-3 px-2 font-medium text-gray-700">
+                          <button 
+                            className="flex items-center gap-1 hover:text-gray-900"
+                            onClick={() => {
+                              if (sortBy === 'name') {
+                                setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+                              } else {
+                                setSortBy('name')
+                                setSortOrder('asc')
+                              }
+                            }}
+                          >
+                            Beat Info
+                            {sortBy === 'name' && (
+                              sortOrder === 'asc' ? 
+                                <ChevronUp className="h-4 w-4" /> : 
+                                <ChevronDown className="h-4 w-4" />
+                            )}
+                          </button>
+                        </th>
+                        <th className="text-left py-3 px-2 font-medium text-gray-700">Location</th>
+                        <th className="text-left py-3 px-2 font-medium text-gray-700">
+                          <button 
+                            className="flex items-center gap-1 hover:text-gray-900"
+                            onClick={() => {
+                              if (sortBy === 'status') {
+                                setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+                              } else {
+                                setSortBy('status')
+                                setSortOrder('asc')
+                              }
+                            }}
+                          >
+                            Status
+                            {sortBy === 'status' && (
+                              sortOrder === 'asc' ? 
+                                <ChevronUp className="h-4 w-4" /> : 
+                                <ChevronDown className="h-4 w-4" />
+                            )}
+                          </button>
+                        </th>
+                        <th className="text-left py-3 px-2 font-medium text-gray-700">Personnel</th>
+                        <th className="text-left py-3 px-2 font-medium text-gray-700">Duty Schedule</th>
+                        <th className="text-left py-3 px-2 font-medium text-gray-700">
+                          <button 
+                            className="flex items-center gap-1 hover:text-gray-900"
+                            onClick={() => {
+                              if (sortBy === 'violations') {
+                                setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+                              } else {
+                                setSortBy('violations')
+                                setSortOrder('asc')
+                              }
+                            }}
+                          >
+                            Violations
+                            {sortBy === 'violations' && (
+                              sortOrder === 'asc' ? 
+                                <ChevronUp className="h-4 w-4" /> : 
+                                <ChevronDown className="h-4 w-4" />
+                            )}
+                          </button>
+                        </th>
+                        <th className="text-center py-3 px-2 font-medium text-gray-700">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredBeats.map(beat => (
+                        <BeatTableRow 
+                          key={beat.id} 
+                          beat={beat} 
+                          violations={violations}
+                          onEdit={() => setSelectedBeat(beat)}
+                          onView={() => setSelectedBeat(beat)}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -697,8 +739,8 @@ export function GeofencingContent() {
   )
 }
 
-// Beat Card Component
-function BeatCard({ 
+// Beat Table Row Component
+function BeatTableRow({ 
   beat, 
   violations,
   onEdit, 
@@ -709,176 +751,141 @@ function BeatCard({
   onEdit: () => void
   onView: () => void 
 }) {
-  // Get violations for this specific beat
   const beatViolations = getViolationDetailsForBeat(beat.id, violations)
+  const pendingViolations = beatViolations.filter(v => v.status === 'pending')
+  
   return (
-    <Card>
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <div className="flex items-center space-x-3 mb-2">
-              <h3 className="text-lg font-semibold text-gray-900">{beat.name}</h3>
-              <Badge className={`${getStatusColor(beat.status)} border-0`}>
-                {beat.status}
-              </Badge>
-              <Badge className={`${getBeatStatusColor(beat.beatStatus)} border-0 flex items-center gap-1`}>
-                {getBeatStatusIcon(beat.beatStatus)}
-                {beat.beatStatus.replace('_', ' ')}
-              </Badge>
-            </div>
-            
-            <p className="text-gray-600 mb-3">{beat.location.address}</p>
-            
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm mb-4">
-              <div>
-                <p className="text-gray-500">Province</p>
-                <p className="font-medium">{beat.province}</p>
-              </div>
-              <div>
-                <p className="text-gray-500">Unit</p>
-                <p className="font-medium">{beat.unit}</p>
-              </div>
-              <div>
-                <p className="text-gray-500">Radius</p>
-                <p className="font-medium">{beat.radius}m</p>
-              </div>
-              <div>
-                <p className="text-gray-500">Personnel</p>
-                <p className="font-medium">{beat.assignedPersonnel.length}</p>
-              </div>
-              <div>
-                <p className="text-gray-500">Duty Duration</p>
-                <p className="font-medium">{calculateDutyDuration(beat.dutyStartTime, beat.dutyEndTime)}</p>
-              </div>
-            </div>
-
-            {/* Duty Time Information */}
-            {beat.dutyStartTime && (
-              <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Clock className="h-4 w-4 text-gray-600" />
-                  <span className="text-sm font-medium text-gray-700">Duty Schedule</span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-gray-500">Time: </span>
-                    <span className="font-medium">{formatDutyTime(beat.dutyStartTime, beat.dutyEndTime)}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Auto-started: </span>
-                    <span className="font-medium text-green-600">
-                      {beat.beatStatus === 'in_progress' ? 'Yes' : 'Pending acceptance'}
-                    </span>
-                  </div>
-                </div>
-                {beat.declineReason && (
-                  <div className="mt-2 text-sm">
-                    <span className="text-red-600 font-medium">Decline Reason: </span>
-                    <span className="text-gray-700">{beat.declineReason}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Personnel Acceptance Details */}
-            <div className="mb-3">
-              <p className="text-sm text-gray-500 mb-2">Personnel Acceptance Status:</p>
-              <div className="space-y-2">
-                {beat.assignedPersonnel.map((person, index) => {
-                  const acceptance = beat.personnelAcceptance?.[person]
-                  return (
-                    <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">
-                          {person}
-                        </Badge>
-                        <Badge className={`text-xs ${
-                          acceptance?.status === 'accepted' ? 'bg-green-100 text-green-800' :
-                          acceptance?.status === 'declined' ? 'bg-red-100 text-red-800' :
-                          'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {acceptance?.status || 'pending'}
-                        </Badge>
-                      </div>
-                      {acceptance?.timestamp && (
-                        <span className="text-xs text-gray-500">{acceptance.timestamp}</span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="mt-2 text-xs text-gray-600">
-                <span className="font-medium">
-                  {Object.values(beat.personnelAcceptance || {}).filter(a => a.status === 'accepted').length}
-                </span> of <span className="font-medium">{beat.assignedPersonnel.length}</span> personnel accepted
-                {beat.beatStatus === 'in_progress' && (
-                  <span className="text-green-600 ml-2">• Auto-started when all accepted</span>
-                )}
-              </div>
-            </div>
-
-            {/* Radius Exit Violation Details */}
-            {beatViolations.length > 0 && (
-              <div className="mb-3">
-                <p className="text-sm text-red-600 font-medium mb-2">Radius Exit Notifications:</p>
-                <div className="space-y-1">
-                  {beatViolations.map(violation => (
-                    <div key={violation.id} className={`text-xs text-gray-600 p-2 rounded ${
-                      violation.status === 'pending' ? 'bg-red-50' :
-                      violation.status === 'acknowledged' ? 'bg-orange-50' :
-                      'bg-green-50'
-                    }`}>
-                      <div className="flex items-center gap-1">
-                        <XCircle className="h-3 w-3 text-red-500" />
-                        <span className={`font-medium ${
-                          violation.status === 'pending' ? 'text-red-700' :
-                          violation.status === 'acknowledged' ? 'text-orange-700' :
-                          'text-green-700'
-                        }`}>
-                          {violation.personnelName}
-                        </span>
-                        <span className="text-gray-600">
-                          exited beat radius ({violation.distanceFromCenter}m from center, radius: {beat.radius}m)
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1 flex items-center justify-between">
-                        <span>{new Date(violation.timestamp).toLocaleString()}</span>
-                        <span className={`px-2 py-1 rounded ${
-                          violation.status === 'pending' ? 'bg-red-100 text-red-700' :
-                          violation.status === 'acknowledged' ? 'bg-orange-100 text-orange-700' :
-                          'bg-green-100 text-green-700'
-                        }`}>
-                          {violation.status === 'pending' ? 'Awaiting Response' :
-                           violation.status === 'acknowledged' ? 'Acknowledged' :
-                           'Resolved'}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            <div className="flex items-center space-x-4 mt-3 text-sm text-gray-500">
-              <span>Created: {beat.createdAt}</span>
-              <span>Last activity: {beat.lastActivity}</span>
-            </div>
+    <tr className="border-b border-gray-100 hover:bg-gray-50">
+      {/* Beat Info */}
+      <td className="py-4 px-2">
+        <div>
+          <div className="font-medium text-gray-900">{beat.name}</div>
+          <div className="text-sm text-gray-500">{beat.unit} - {beat.subUnit}</div>
+          <div className="text-xs text-gray-400">Radius: {beat.radius}m</div>
+        </div>
+      </td>
+      
+      {/* Location */}
+      <td className="py-4 px-2">
+        <div>
+          <div className="text-sm text-gray-900">{beat.province}</div>
+          <div className="text-xs text-gray-500 max-w-48 truncate" title={beat.location.address}>
+            {beat.location.address}
           </div>
-          
-          <div className="flex flex-col space-y-2 ml-4">
-            <Button variant="ghost" size="sm" onClick={onView}>
-              <Eye className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="sm" onClick={onEdit}>
-              <Edit className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="sm">
-              <Trash2 className="h-4 w-4 text-red-500" />
-            </Button>
+          <div className="text-xs text-gray-400 font-mono">
+            {beat.location.lat.toFixed(4)}, {beat.location.lng.toFixed(4)}
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </td>
+      
+      {/* Status */}
+      <td className="py-4 px-2">
+        <div className="space-y-1">
+          <Badge className={`${getStatusColor(beat.status)} border-0 text-xs`}>
+            {beat.status}
+          </Badge>
+          <div>
+            <Badge className={`${getBeatStatusColor(beat.beatStatus)} border-0 flex items-center gap-1 text-xs w-fit`}>
+              {getBeatStatusIcon(beat.beatStatus)}
+              {beat.beatStatus.replace('_', ' ')}
+            </Badge>
+          </div>
+        </div>
+      </td>
+      
+      {/* Personnel */}
+      <td className="py-4 px-2">
+        <div>
+          <div className="text-sm font-medium text-gray-900">
+            {beat.assignedPersonnel.length} personnel
+          </div>
+          <div className="text-xs text-gray-500 space-y-1 mt-1">
+            {beat.assignedPersonnel.slice(0, 2).map((person, index) => (
+              <div key={index} className="flex items-center gap-1">
+                <span>{person}</span>
+                {beat.personnelAcceptance?.[person] && (
+                  <Badge className={`text-xs px-1 py-0 ${
+                    beat.personnelAcceptance[person].status === 'accepted' ? 'bg-green-100 text-green-700' :
+                    beat.personnelAcceptance[person].status === 'declined' ? 'bg-red-100 text-red-700' :
+                    'bg-yellow-100 text-yellow-700'
+                  }`}>
+                    {beat.personnelAcceptance[person].status}
+                  </Badge>
+                )}
+              </div>
+            ))}
+            {beat.assignedPersonnel.length > 2 && (
+              <div className="text-xs text-gray-400">
+                +{beat.assignedPersonnel.length - 2} more
+              </div>
+            )}
+          </div>
+        </div>
+      </td>
+      
+      {/* Duty Schedule */}
+      <td className="py-4 px-2">
+        {beat.dutyStartTime ? (
+          <div>
+            <div className="text-sm font-medium text-gray-900">
+              {formatDutyTime(beat.dutyStartTime, beat.dutyEndTime)}
+            </div>
+            <div className="text-xs text-gray-500">
+              Duration: {calculateDutyDuration(beat.dutyStartTime, beat.dutyEndTime)}
+            </div>
+            {beat.beatStatus === 'in_progress' && (
+              <div className="text-xs text-green-600 mt-1">● Active</div>
+            )}
+          </div>
+        ) : (
+          <div className="text-sm text-gray-400">Not scheduled</div>
+        )}
+      </td>
+      
+      {/* Violations */}
+      <td className="py-4 px-2">
+        <div>
+          <div className="text-sm font-medium text-gray-900">
+            {beat.violations} total
+          </div>
+          {pendingViolations.length > 0 && (
+            <div className="text-xs text-red-600 mt-1">
+              {pendingViolations.length} pending
+            </div>
+          )}
+          {beatViolations.length > 0 && (
+            <div className="text-xs text-gray-500">
+              Last: {new Date(beatViolations[0].timestamp).toLocaleDateString()}
+            </div>
+          )}
+        </div>
+      </td>
+      
+      {/* Actions */}
+      <td className="py-4 px-2">
+        <div className="flex items-center justify-center gap-1">
+          <Button variant="ghost" size="sm" onClick={onView} className="h-8 w-8 p-0">
+            <Eye className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onEdit} className="h-8 w-8 p-0">
+            <Edit className="h-4 w-4" />
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
+            onClick={() => {
+              if (window.confirm('Are you sure you want to delete this beat?')) {
+                // Handle delete logic here
+                console.log('Deleting beat:', beat.id)
+              }
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </td>
+    </tr>
   )
 }
 
@@ -1194,62 +1201,186 @@ function BeatDetailsDialog({
   beat: GeofenceBeat
   onClose: () => void 
 }) {
+  const beatViolations = getViolationDetailsForBeat(beat.id, mockViolations)
+  
   return (
     <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{beat.name}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            {beat.name}
+          </DialogTitle>
           <DialogDescription>{beat.location.address}</DialogDescription>
         </DialogHeader>
         
         <div className="space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <Label className="text-sm text-gray-500">Status</Label>
-              <Badge className={`${getStatusColor(beat.status)} border-0`}>
-                {beat.status}
-              </Badge>
-            </div>
-            <div>
-              <Label className="text-sm text-gray-500">Radius</Label>
-              <p className="font-medium">{beat.radius} meters</p>
-            </div>
-            <div>
-              <Label className="text-sm text-gray-500">Province</Label>
-              <p className="font-medium">{beat.province}</p>
-            </div>
-            <div>
-              <Label className="text-sm text-gray-500">Unit</Label>
-              <p className="font-medium">{beat.unit}</p>
-            </div>
-          </div>
-          
+          {/* Basic Information */}
           <div>
-            <Label className="text-sm text-gray-500 mb-2 block">Assigned Personnel</Label>
-            <div className="flex flex-wrap gap-2">
-              {beat.assignedPersonnel.map((person, index) => (
-                <Badge key={index} variant="secondary">
-                  {person}
-                </Badge>
-              ))}
+            <h3 className="text-lg font-medium text-gray-900 mb-3">Basic Information</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <Label className="text-sm text-gray-500">Status</Label>
+                <div className="mt-1">
+                  <Badge className={`${getStatusColor(beat.status)} border-0`}>
+                    {beat.status}
+                  </Badge>
+                </div>
+              </div>
+              <div>
+                <Label className="text-sm text-gray-500">Beat Status</Label>
+                <div className="mt-1">
+                  <Badge className={`${getBeatStatusColor(beat.beatStatus)} border-0 flex items-center gap-1 w-fit`}>
+                    {getBeatStatusIcon(beat.beatStatus)}
+                    {beat.beatStatus.replace('_', ' ')}
+                  </Badge>
+                </div>
+              </div>
+              <div>
+                <Label className="text-sm text-gray-500">Radius</Label>
+                <p className="font-medium">{beat.radius} meters</p>
+              </div>
+              <div>
+                <Label className="text-sm text-gray-500">Created</Label>
+                <p className="text-sm">{beat.createdAt}</p>
+              </div>
             </div>
           </div>
+
+          {/* Location Information */}
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 mb-3">Location</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label className="text-sm text-gray-500">Province</Label>
+                <p className="font-medium">{beat.province}</p>
+              </div>
+              <div>
+                <Label className="text-sm text-gray-500">Unit</Label>
+                <p className="font-medium">{beat.unit}</p>
+              </div>
+              <div>
+                <Label className="text-sm text-gray-500">Sub-unit</Label>
+                <p className="font-medium">{beat.subUnit}</p>
+              </div>
+              <div className="md:col-span-2">
+                <Label className="text-sm text-gray-500">Address</Label>
+                <p className="text-sm">{beat.location.address}</p>
+              </div>
+              <div>
+                <Label className="text-sm text-gray-500">Coordinates</Label>
+                <p className="font-mono text-sm">
+                  {beat.location.lat}, {beat.location.lng}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Duty Schedule */}
+          {beat.dutyStartTime && (
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-3">Duty Schedule</h3>
+              <div className="bg-blue-50 rounded-lg p-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label className="text-sm text-blue-700">Schedule</Label>
+                    <p className="font-medium text-blue-900">
+                      {formatDutyTime(beat.dutyStartTime, beat.dutyEndTime)}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-blue-700">Duration</Label>
+                    <p className="font-medium text-blue-900">
+                      {calculateDutyDuration(beat.dutyStartTime, beat.dutyEndTime)}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm text-blue-700">Status</Label>
+                    <p className="font-medium text-blue-900">
+                      {beat.beatStatus === 'in_progress' ? 'Active' : 'Inactive'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label className="text-sm text-gray-500">Coordinates</Label>
-              <p className="font-mono text-sm">
-                {beat.location.lat}, {beat.location.lng}
-              </p>
-            </div>
-            <div>
-              <Label className="text-sm text-gray-500">Created</Label>
-              <p className="text-sm">{beat.createdAt}</p>
+          {/* Personnel */}
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 mb-3">Assigned Personnel</h3>
+            <div className="space-y-3">
+              {beat.assignedPersonnel.map((person, index) => {
+                const acceptance = beat.personnelAcceptance?.[person]
+                return (
+                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-gray-900">{person}</p>
+                      <p className="text-sm text-gray-600">{beat.unit} - {beat.subUnit}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge className={`text-xs ${
+                        acceptance?.status === 'accepted' ? 'bg-green-100 text-green-800' :
+                        acceptance?.status === 'declined' ? 'bg-red-100 text-red-800' :
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {acceptance?.status || 'pending'}
+                      </Badge>
+                      {acceptance?.timestamp && (
+                        <span className="text-xs text-gray-500">{acceptance.timestamp}</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
+
+          {/* Violations */}
+          {beatViolations.length > 0 && (
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-3">Recent Violations</h3>
+              <div className="space-y-2">
+                {beatViolations.slice(0, 5).map(violation => (
+                  <div key={violation.id} className={`p-3 rounded-lg border ${
+                    violation.status === 'pending' ? 'border-red-200 bg-red-50' :
+                    violation.status === 'acknowledged' ? 'border-orange-200 bg-orange-50' :
+                    'border-green-200 bg-green-50'
+                  }`}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <XCircle className="h-4 w-4 text-red-500" />
+                          <span className="font-medium text-gray-900">{violation.personnelName}</span>
+                          <Badge className="text-xs">Exit Violation</Badge>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Exited beat radius at {violation.distanceFromCenter}m from center
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(violation.timestamp).toLocaleString()}
+                        </p>
+                      </div>
+                      <Badge className={`${
+                        violation.status === 'pending' ? 'bg-red-100 text-red-700' :
+                        violation.status === 'acknowledged' ? 'bg-orange-100 text-orange-700' :
+                        'bg-green-100 text-green-700'
+                      }`}>
+                        {violation.status}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+                {beatViolations.length > 5 && (
+                  <p className="text-sm text-gray-500 text-center">
+                    +{beatViolations.length - 5} more violations
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
         
-        <div className="flex justify-end space-x-2 pt-4">
+        <div className="flex justify-end space-x-2 pt-4 border-t">
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
@@ -1260,142 +1391,5 @@ function BeatDetailsDialog({
         </div>
       </DialogContent>
     </Dialog>
-  )
-}
-
-// Duty Status Card Component
-function DutyStatusCard({ 
-  beat, 
-  onUpdateStatus 
-}: { 
-  beat: GeofenceBeat
-  onUpdateStatus: (beatId: string, status: GeofenceBeat['beatStatus'], reason?: string) => void 
-}) {
-  const handleAcceptBeat = () => {
-    // Simulate mobile acceptance
-    onUpdateStatus(beat.id, 'accepted')
-  }
-
-  const handleDeclineBeat = () => {
-    // Simulate mobile decline
-    const reason = 'Personnel unavailable due to other assignment'
-    onUpdateStatus(beat.id, 'declined', reason)
-  }
-
-  const handleStartDuty = () => {
-    // Start duty time
-    onUpdateStatus(beat.id, 'in_progress')
-  }
-
-  const handleEndDuty = () => {
-    // End duty time
-    onUpdateStatus(beat.id, 'completed')
-  }
-
-  return (
-    <div className="border border-gray-200 rounded-lg p-4">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <div className="flex items-center gap-3 mb-2">
-            <h4 className="font-semibold text-gray-900">{beat.name}</h4>
-            <Badge className={`${getBeatStatusColor(beat.beatStatus)} border-0 flex items-center gap-1`}>
-              {getBeatStatusIcon(beat.beatStatus)}
-              {beat.beatStatus.replace('_', ' ')}
-            </Badge>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mb-3">
-            <div>
-              <span className="text-gray-500">Personnel: </span>
-              <span className="font-medium">{beat.assignedPersonnel.join(', ')}</span>
-            </div>
-            <div>
-              <span className="text-gray-500">Location: </span>
-              <span className="font-medium">{beat.location.address}</span>
-            </div>
-            <div>
-              <span className="text-gray-500">Unit: </span>
-              <span className="font-medium">{beat.unit} - {beat.subUnit}</span>
-            </div>
-          </div>
-
-          {beat.dutyStartTime && (
-            <div className="bg-blue-50 rounded-lg p-3 mb-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Clock className="h-4 w-4 text-blue-600" />
-                <span className="text-sm font-medium text-blue-800">Duty Information</span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-blue-700">Scheduled: </span>
-                  <span className="font-medium text-blue-900">{formatDutyTime(beat.dutyStartTime, beat.dutyEndTime)}</span>
-                </div>
-                <div>
-                  <span className="text-blue-700">Duration: </span>
-                  <span className="font-medium text-blue-900">{calculateDutyDuration(beat.dutyStartTime, beat.dutyEndTime)}</span>
-                </div>
-              </div>
-              {beat.acceptanceTime && (
-                <div className="mt-2 text-sm">
-                  <span className="text-blue-700">Accepted at: </span>
-                  <span className="font-medium text-blue-900">
-                    {new Date(beat.acceptanceTime).toLocaleString()}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {beat.declineReason && (
-            <div className="bg-red-50 rounded-lg p-3 mb-3">
-              <div className="flex items-center gap-2 mb-1">
-                <XCircle className="h-4 w-4 text-red-600" />
-                <span className="text-sm font-medium text-red-800">Declined</span>
-              </div>
-              <p className="text-sm text-red-700">{beat.declineReason}</p>
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-col gap-2 ml-4">
-          {/* Mobile Acceptance Simulation Buttons */}
-          {beat.beatStatus === 'pending' && (
-            <>
-              <Button onClick={handleAcceptBeat} size="sm" className="text-xs">
-                <UserCheck className="h-3 w-3 mr-1" />
-                Accept (Mobile)
-              </Button>
-              <Button onClick={handleDeclineBeat} variant="outline" size="sm" className="text-xs">
-                <UserX className="h-3 w-3 mr-1" />
-                Decline (Mobile)
-              </Button>
-            </>
-          )}
-          
-          {/* Duty Control Buttons */}
-          {beat.beatStatus === 'accepted' && (
-            <Button onClick={handleStartDuty} size="sm" className="text-xs">
-              <Play className="h-3 w-3 mr-1" />
-              Start Duty
-            </Button>
-          )}
-          
-          {beat.beatStatus === 'in_progress' && (
-            <Button onClick={handleEndDuty} variant="outline" size="sm" className="text-xs">
-              <Square className="h-3 w-3 mr-1" />
-              End Duty
-            </Button>
-          )}
-
-          {/* Notification Button for radius exit violations */}
-          {beat.violations > 0 && (
-            <Button variant="destructive" size="sm" className="text-xs">
-              <Bell className="h-3 w-3 mr-1" />
-              Radius Exits ({beat.violations})
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
   )
 }
