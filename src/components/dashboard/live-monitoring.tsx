@@ -229,6 +229,12 @@ export function LiveMonitoring() {
 
   // Fetch personnel data from database
   const fetchPersonnelData = async () => {
+    // Prevent multiple concurrent fetches
+    if (loadingRef.current) {
+      console.log('🔄 Fetch already in progress, skipping...')
+      return
+    }
+
     try {
       setLoading(true)
       loadingRef.current = true
@@ -303,18 +309,23 @@ export function LiveMonitoring() {
 
   // Set up real-time subscriptions with error handling and timeout
   useEffect(() => {
+    // Prevent multiple subscriptions
+    let isMounted = true
+    
     // Initial data fetch
-    fetchPersonnelData()
+    if (isMounted) {
+      fetchPersonnelData()
+    }
 
     // Set a timeout to ensure loading doesn't get stuck
     const loadingTimeout = setTimeout(() => {
-      if (loadingRef.current) {
+      if (loadingRef.current && isMounted) {
         console.log('Loading timeout reached, stopping loading state')
         setLoading(false)
         loadingRef.current = false
-        setError('Connection timeout. Please check your network and try again.')
+        setError('Connection timeout. Your network might be slow. Try refreshing the page.')
       }
-    }, 5000) // 5 second timeout (reduced from 10)
+    }, 8000) // Increased to 8 seconds for slower connections
 
     let locationsChannel: any = null
     let statusChannel: any = null
@@ -385,6 +396,7 @@ export function LiveMonitoring() {
 
     // Cleanup subscriptions
     return () => {
+      isMounted = false
       clearTimeout(loadingTimeout)
       if (locationsChannel) {
         supabase.removeChannel(locationsChannel)
@@ -468,6 +480,19 @@ export function LiveMonitoring() {
           icon: Users
         }
     }
+  }
+
+  // Manual refresh function that resets loading state
+  const handleManualRefresh = async () => {
+    // Force reset loading state first
+    setLoading(false)
+    loadingRef.current = false
+    setError(null)
+    
+    // Small delay to ensure state is reset
+    setTimeout(() => {
+      fetchPersonnelData()
+    }, 100)
   }
 
   // Auto-refresh every 30 seconds
@@ -590,7 +615,7 @@ export function LiveMonitoring() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={fetchPersonnelData}
+                    onClick={handleManualRefresh}
                     disabled={loading}
                   >
                     <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
@@ -694,15 +719,20 @@ export function LiveMonitoring() {
                 ) : error ? (
                   <div className="p-6 text-center text-red-500">
                     <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
-                    <p>{error}</p>
+                    <div className="space-y-2">
+                      <p className="font-medium">{error}</p>
+                      <p className="text-sm text-gray-500">
+                        This can happen due to slow internet, database connection issues, or server problems.
+                      </p>
+                    </div>
                     <Button 
                       variant="outline" 
                       size="sm" 
-                      className="mt-2"
-                      onClick={fetchPersonnelData}
+                      className="mt-3"
+                      onClick={handleManualRefresh}
                     >
                       <RefreshCw className="h-4 w-4 mr-2" />
-                      Retry
+                      Try Again
                     </Button>
                   </div>
                 ) : filteredPersonnel.length === 0 ? (
