@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { createClient } from '@/lib/supabase/client'
+import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import type { AdminRole } from '@/lib/types/database'
 import { MIMAROPA_STRUCTURE, getProvinceSubUnits } from '@/lib/constants/mimaropa'
@@ -76,7 +76,6 @@ export function AdminCreationForm() {
     setLoading(true)
     try {
       // Get the current session for authentication
-      const supabase = createClient()
       const { data: { session }, error: sessionError } = await supabase.auth.getSession()
       
       if (sessionError || !session?.access_token) {

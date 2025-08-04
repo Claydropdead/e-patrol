@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { createClient } from '@/lib/supabase/client'
+import { supabase } from '@/lib/supabase/client'
 
 // Mini map component for Live Monitoring
 function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
@@ -225,7 +225,7 @@ export function LiveMonitoring() {
   const [lastUpdate, setLastUpdate] = useState(new Date())
   const loadingRef = useRef(false)
   
-  const supabase = createClient()
+  // Use singleton supabase instance to prevent multiple GoTrueClient warnings
 
   // Fetch personnel data from database
   const fetchPersonnelData = async () => {

@@ -28,7 +28,7 @@ import {
   X
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { createClient } from '@/lib/supabase/client'
+import { supabase } from '@/lib/supabase/client'
 import { MIMAROPA_STRUCTURE } from '@/lib/constants/mimaropa'
 import type { AdminRole } from '@/lib/types/database'
 
@@ -104,7 +104,7 @@ export function ManageUsers() {
   // Simple cache for assignment history to avoid repeated API calls
   const [historyCache, setHistoryCache] = useState<Record<string, AssignmentHistory[]>>({})
 
-  const supabase = createClient()
+  // Use singleton supabase instance
 
   // Load users from API
   useEffect(() => {

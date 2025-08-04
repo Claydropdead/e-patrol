@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { createClient } from '@/lib/supabase/client'
+import { supabase } from '@/lib/supabase/client'
 import type { User } from '@supabase/supabase-js'
 import type { AdminAccount, Personnel } from '@/lib/types/database'
 
@@ -29,7 +29,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   initialize: async () => {
     try {
       set({ loading: true, error: null })
-      const supabase = createClient()
       
       // Get initial session
       const { data: { session }, error } = await supabase.auth.getSession()
@@ -41,7 +40,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       
       // Listen for auth changes
-      supabase.auth.onAuthStateChange(async (event, session) => {
+      supabase.auth.onAuthStateChange(async (event: any, session: any) => {
         if (session?.user) {
           set({ user: session.user })
           await get().fetchUserProfile()
@@ -59,7 +58,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signIn: async (email: string, password: string) => {
     try {
       set({ loading: true, error: null })
-      const supabase = createClient()
       
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -85,7 +83,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signOut: async () => {
     try {
       set({ loading: true, error: null })
-      const supabase = createClient()
       
       const { error } = await supabase.auth.signOut()
       if (error) throw error
@@ -106,8 +103,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const { user } = get()
       if (!user?.id) return
-      
-      const supabase = createClient()
       
       // Check admin_accounts first
       const { data: adminData, error: adminError } = await supabase

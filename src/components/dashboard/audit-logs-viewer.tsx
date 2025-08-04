@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { createClient } from '@/lib/supabase/client'
+import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import { RefreshCw, Activity } from 'lucide-react'
 
@@ -36,7 +36,7 @@ export function AuditLogsViewer() {
     page: 1
   })
 
-  const supabase = createClient()
+  // Use singleton supabase instance
 
   // Helper function to format audit data in user-friendly way
   const formatAuditData = (log: AuditEntry): string => {

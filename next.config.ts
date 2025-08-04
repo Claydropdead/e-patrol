@@ -1,6 +1,20 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Webpack configuration for Supabase compatibility
+  webpack: (config, { isServer }) => {
+    // Handle Supabase modules properly
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      net: false,
+      tls: false,
+      crypto: false,
+    };
+    
+    return config;
+  },
+
   // Security headers
   async headers() {
     return [
