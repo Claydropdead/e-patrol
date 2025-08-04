@@ -13,7 +13,6 @@ import {
   ChevronRight,
   FileText,
   Menu,
-  X,
   Bell,
   LogOut,
   User
@@ -178,7 +177,6 @@ export function DashboardSidebar({ userType, adminRole, activeTab, onTabChange }
   const renderMenuItem = (item: MenuItem) => {
     const Icon = item.icon
     const isExpanded = expandedSections.includes(item.id)
-    const isActive = activeTab === item.id
 
     if (item.type === 'section') {
       return (

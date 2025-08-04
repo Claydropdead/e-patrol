@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -112,7 +112,7 @@ export function AuditLogsViewer() {
     return changedBy
   }
 
-  const fetchAuditLogs = async () => {
+  const fetchAuditLogs = useCallback(async () => {
     setLoading(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -149,7 +149,7 @@ export function AuditLogsViewer() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [filters.page, filters.table, filters.operation, filters.userId]) // Add dependencies for useCallback
 
   const fetchStats = async () => {
     try {
@@ -192,7 +192,7 @@ export function AuditLogsViewer() {
 
   useEffect(() => {
     fetchAuditLogs()
-  }, [filters.page, filters.table, filters.operation, filters.userId])
+  }, [filters.page, filters.table, filters.operation, filters.userId, fetchAuditLogs])
 
   // Initial load only
   useEffect(() => {

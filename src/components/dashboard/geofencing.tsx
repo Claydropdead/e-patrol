@@ -1,15 +1,12 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { 
   Shield, 
   MapPin, 
   Plus, 
-  Search, 
-  Filter,
+  Search,
   Users,
-  AlertTriangle,
-  Settings,
   Edit,
   Trash2,
   Eye,
@@ -22,7 +19,6 @@ import {
   Bell,
   Activity,
   Play,
-  Pause,
   Square
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -278,14 +274,6 @@ const getBeatStatusIcon = (status: string) => {
   }
 }
 
-const getViolationTypeIcon = (type: string) => {
-  // Only exit violations are tracked for notifications
-  if (type === 'exit') {
-    return <XCircle className="h-4 w-4 text-red-500" />
-  }
-  return <AlertTriangle className="h-4 w-4 text-red-500" />
-}
-
 const formatDutyTime = (startTime?: string, endTime?: string) => {
   if (!startTime) return 'Not scheduled'
   
@@ -331,7 +319,7 @@ const calculateDutyDuration = (startTime?: string, endTime?: string) => {
     const [startHour, startMin] = startTime.split(':').map(Number)
     const [endHour, endMin] = endTime.split(':').map(Number)
     
-    let startMinutes = startHour * 60 + startMin
+    const startMinutes = startHour * 60 + startMin
     let endMinutes = endHour * 60 + endMin
     
     // Handle overnight shifts
@@ -381,54 +369,65 @@ export function GeofencingContent() {
   const [selectedBeat, setSelectedBeat] = useState<GeofenceBeat | null>(null)
   const [beats, setBeats] = useState<GeofenceBeat[]>(mockBeats)
   const [violations, setViolations] = useState<Violation[]>(mockViolations)
-  const [notifications, setNotifications] = useState<string[]>([])
 
+  // Use refs to avoid stale closures and prevent infinite loops
+  const beatsRef = useRef(beats)
+  const violationsRef = useRef(violations)
+  
+  // Keep refs updated
+  useEffect(() => {
+    beatsRef.current = beats
+  }, [beats])
+  
+  useEffect(() => {
+    violationsRef.current = violations
+  }, [violations])
   // Simulate real-time violation detection - ONLY for radius exit notifications
   useEffect(() => {
     const interval = setInterval(() => {
       // Simulate random radius exit detection for notification purposes
       if (Math.random() > 0.95) { // Reduced frequency since it's only for exit notifications
-        const activeBeat = beats.find(b => b.beatStatus === 'in_progress')
-        if (activeBeat && activeBeat.assignedPersonnel.length > 0) {
-          // Calculate a position outside the beat radius
-          const radiusInDegrees = activeBeat.radius / 111000 // Rough conversion to degrees
-          const exitDistance = activeBeat.radius + Math.floor(Math.random() * 200) + 50 // At least 50m outside radius
-          
-          const newViolation: Violation = {
-            id: `v_${Date.now()}`,
-            beatId: activeBeat.id,
-            beatName: activeBeat.name,
-            personnelName: activeBeat.assignedPersonnel[Math.floor(Math.random() * activeBeat.assignedPersonnel.length)],
-            personnelId: `p_${Date.now()}`,
-            type: 'exit', // Only exit violations for notifications
-            timestamp: new Date().toISOString(),
-            location: {
-              lat: activeBeat.location.lat + (Math.random() - 0.5) * radiusInDegrees * 2,
-              lng: activeBeat.location.lng + (Math.random() - 0.5) * radiusInDegrees * 2
-            },
-            status: 'pending',
-            distanceFromCenter: exitDistance,
-            notificationSent: true
+        setBeats(currentBeats => {
+          const activeBeat = currentBeats.find(b => b.beatStatus === 'in_progress')
+          if (activeBeat && activeBeat.assignedPersonnel.length > 0) {
+            // Calculate a position outside the beat radius
+            const radiusInDegrees = activeBeat.radius / 111000 // Rough conversion to degrees
+            const exitDistance = activeBeat.radius + Math.floor(Math.random() * 200) + 50 // At least 50m outside radius
+            
+            const newViolation: Violation = {
+              id: `v_${Date.now()}`,
+              beatId: activeBeat.id,
+              beatName: activeBeat.name,
+              personnelName: activeBeat.assignedPersonnel[Math.floor(Math.random() * activeBeat.assignedPersonnel.length)],
+              personnelId: `p_${Date.now()}`,
+              type: 'exit', // Only exit violations for notifications
+              timestamp: new Date().toISOString(),
+              location: {
+                lat: activeBeat.location.lat + (Math.random() - 0.5) * radiusInDegrees * 2,
+                lng: activeBeat.location.lng + (Math.random() - 0.5) * radiusInDegrees * 2
+              },
+              status: 'pending',
+              distanceFromCenter: exitDistance,
+              notificationSent: true
+            }
+            
+            // Update all state in batch to prevent cascading re-renders
+            setViolations(prev => [newViolation, ...prev])
+            
+            // Update beat violation count and return updated beats
+            return currentBeats.map(beat => 
+              beat.id === activeBeat.id 
+                ? { ...beat, violations: beat.violations + 1 }
+                : beat
+            )
           }
-          
-          setViolations(prev => [newViolation, ...prev])
-          setNotifications(prev => [
-            `🚨 RADIUS EXIT ALERT: ${newViolation.personnelName} has left ${activeBeat.name} (${exitDistance}m from center)`,
-            ...prev.slice(0, 4) // Keep only last 5 notifications
-          ])
-          
-          // Update beat violation count
-          setBeats(prevBeats => prevBeats.map(beat => 
-            beat.id === activeBeat.id 
-              ? { ...beat, violations: beat.violations + 1 }
-              : beat
-          ))
-        }
+          return currentBeats // Return unchanged if no active beat
+        })
       }
     }, 20000) // Check every 20 seconds for exit notifications
 
     return () => clearInterval(interval)
-  }, [beats])
+  }, []) // ✅ FIXED: Empty dependency array
 
   // Simulate real-time updates
   useEffect(() => {
@@ -471,55 +470,29 @@ export function GeofencingContent() {
     }))
   }
 
-  // Function to handle individual personnel acceptance (simulating mobile actions)
-  const updatePersonnelAcceptance = (beatId: string, personnelName: string, status: 'accepted' | 'declined', reason?: string) => {
-    setBeats(prev => prev.map(beat => {
-      if (beat.id === beatId) {
-        const updatedAcceptance = {
-          ...beat.personnelAcceptance,
-          [personnelName]: {
-            status,
-            timestamp: new Date().toLocaleString(),
-            reason: status === 'declined' ? reason : undefined
-          }
-        }
-        
-        const updatedBeat = {
-          ...beat,
-          personnelAcceptance: updatedAcceptance
-        }
-        
-        // Check if all personnel have now accepted
-        const allAccepted = beat.assignedPersonnel.every(person => 
-          updatedAcceptance[person]?.status === 'accepted'
-        )
-        
-        // Auto-start if all accepted
-        if (allAccepted && beat.beatStatus === 'accepted') {
-          updatedBeat.beatStatus = 'in_progress'
-          updatedBeat.acceptanceTime = 'Auto-started when all accepted'
-        }
-        
-        return updatedBeat
-      }
-      return beat
-    }))
-  }
+  // Get unique provinces from MIMAROPA structure with error handling
+  const provinces = React.useMemo(() => {
+    try {
+      return Object.keys(MIMAROPA_STRUCTURE || {})
+    } catch (error) {
+      console.error('Error accessing MIMAROPA_STRUCTURE:', error)
+      return []
+    }
+  }, [])
 
-  // Get unique provinces from MIMAROPA structure
-  const provinces = Object.keys(MIMAROPA_STRUCTURE)
-
-  const filteredBeats = beats.filter(beat => {
-    const matchesSearch = beat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         beat.location.address.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesProvince = selectedProvince === 'all' || beat.province === selectedProvince
-    return matchesSearch && matchesProvince
-  })
-
-  const filteredViolations = violations.filter(violation =>
-    violation.beatName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    violation.personnelName.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredBeats = React.useMemo(() => {
+    try {
+      return beats.filter(beat => {
+        const matchesSearch = beat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                             beat.location.address.toLowerCase().includes(searchTerm.toLowerCase())
+        const matchesProvince = selectedProvince === 'all' || beat.province === selectedProvince
+        return matchesSearch && matchesProvince
+      })
+    } catch (error) {
+      console.error('Error filtering beats:', error)
+      return beats
+    }
+  }, [beats, searchTerm, selectedProvince])
 
   return (
     <div className="space-y-6">
@@ -909,87 +882,6 @@ function BeatCard({
   )
 }
 
-// Violation Card Component - Only for radius exit notifications
-function ViolationCard({ violation }: { violation: Violation }) {
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-start space-x-3 flex-1">
-            <XCircle className="h-4 w-4 text-red-500 mt-1" />
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <h4 className="font-medium text-gray-900">{violation.personnelName}</h4>
-                <Badge className={`${getStatusColor(violation.status)} border-0 text-xs`}>
-                  {violation.status}
-                </Badge>
-              </div>
-              <p className="text-sm text-gray-600 mb-2">{violation.beatName}</p>
-              <p className="text-sm text-red-700 mb-2 font-medium">
-                🚨 Exited beat radius - Notification sent
-              </p>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-500">
-                <div>
-                  <span>Detected: </span>
-                  <span>{new Date(violation.timestamp).toLocaleString()}</span>
-                </div>
-                <div>
-                  <span>Distance from center: </span>
-                  <span className="font-medium text-red-600">{violation.distanceFromCenter}m</span>
-                </div>
-                {violation.responseTime && (
-                  <div>
-                    <span>Response Time: </span>
-                    <span className="font-medium">{Math.floor(violation.responseTime / 60)}m {violation.responseTime % 60}s</span>
-                  </div>
-                )}
-                {violation.acknowledgedAt && (
-                  <div>
-                    <span>Acknowledged: </span>
-                    <span>{new Date(violation.acknowledgedAt).toLocaleString()}</span>
-                  </div>
-                )}
-                {violation.resolvedAt && (
-                  <div>
-                    <span>Resolved: </span>
-                    <span>{new Date(violation.resolvedAt).toLocaleString()}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex flex-col space-y-1 ml-4">
-            {violation.status === 'pending' && (
-              <>
-                <Button variant="outline" size="sm" className="text-xs">
-                  <Bell className="h-3 w-3 mr-1" />
-                  Re-notify
-                </Button>
-                <Button variant="outline" size="sm" className="text-xs">
-                  <CheckCircle className="h-3 w-3 mr-1" />
-                  Resolve
-                </Button>
-              </>
-            )}
-            {violation.status === 'acknowledged' && (
-              <Button variant="outline" size="sm" className="text-xs">
-                <CheckCircle className="h-3 w-3 mr-1" />
-                Resolve
-              </Button>
-            )}
-            <Button variant="ghost" size="sm" className="text-xs">
-              <Eye className="h-3 w-3 mr-1" />
-              View
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
 // Create Beat Dialog Component
 function CreateBeatDialog({ onClose }: { onClose: () => void }) {
   const [formData, setFormData] = useState({
@@ -1056,7 +948,7 @@ function CreateBeatDialog({ onClose }: { onClose: () => void }) {
     const [startHour, startMin] = startTime.split(':').map(Number)
     const [endHour, endMin] = endTime.split(':').map(Number)
     
-    let startMinutes = startHour * 60 + startMin
+    const startMinutes = startHour * 60 + startMin
     let endMinutes = endHour * 60 + endMin
     
     // Handle overnight shifts

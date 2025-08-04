@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase/client'
-import type { User } from '@supabase/supabase-js'
+import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
 import type { AdminAccount, Personnel } from '@/lib/types/database'
 
 interface AuthState {
@@ -40,7 +40,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       
       // Listen for auth changes
-      supabase.auth.onAuthStateChange(async (event: any, session: any) => {
+      supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
         if (session?.user) {
           set({ user: session.user })
           await get().fetchUserProfile()

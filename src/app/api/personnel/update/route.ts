@@ -218,7 +218,7 @@ export async function GET(request: NextRequest) {
 
       // Get admin details in a single batch query
       const adminIds = [...new Set(basicHistory?.map(h => h.assigned_by).filter(Boolean) || [])]
-      let adminDetails: any = {}
+      let adminDetails: Record<string, { full_name: string; rank: string }> = {}
       
       if (adminIds.length > 0) {
         const { data: admins } = await supabaseAdmin
@@ -226,7 +226,7 @@ export async function GET(request: NextRequest) {
           .select('id, full_name, rank')
           .in('id', adminIds)
         
-        adminDetails = (admins || []).reduce((acc: any, admin: any) => {
+        adminDetails = (admins || []).reduce((acc: Record<string, { full_name: string; rank: string }>, admin: { id: string; full_name: string; rank: string }) => {
           acc[admin.id] = { full_name: admin.full_name, rank: admin.rank }
           return acc
         }, {})

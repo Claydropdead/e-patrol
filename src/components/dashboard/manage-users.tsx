@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -85,7 +85,6 @@ export function ManageUsers() {
   const [personnelUsers, setPersonnelUsers] = useState<PersonnelUser[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterRole, setFilterRole] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   
   // Edit dialog states
@@ -106,27 +105,13 @@ export function ManageUsers() {
 
   // Use singleton supabase instance
 
-  // Load users from API
-  useEffect(() => {
-    loadUsers()
-  }, [])
-
-  // Reload users when filters change
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      loadUsers()
-    }, 500) // Debounce search
-
-    return () => clearTimeout(timeoutId)
-  }, [searchTerm, filterRole, filterStatus])
-
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     setLoading(true)
     try {
       const searchParams = new URLSearchParams({
         type: 'all',
         search: searchTerm,
-        role: filterRole,
+        role: 'all', // Use 'all' since filterRole is removed
         status: filterStatus
       })
 
@@ -217,7 +202,21 @@ export function ManageUsers() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [searchTerm, filterStatus]) // Dependencies for useCallback
+
+  // Load users from API
+  useEffect(() => {
+    loadUsers()
+  }, [loadUsers])
+
+  // Reload users when filters change
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      loadUsers()
+    }, 500) // Debounce search
+
+    return () => clearTimeout(timeoutId)
+  }, [searchTerm, filterStatus, loadUsers])
 
   const getRoleInfo = (role: AdminRole) => {
     const roleConfig = {
@@ -546,11 +545,10 @@ export function ManageUsers() {
     const matchesSearch = user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.rank.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesRole = filterRole === 'all' || user.role === filterRole
     const matchesStatus = filterStatus === 'all' || 
                          (filterStatus === 'active' && user.is_active) ||
                          (filterStatus === 'inactive' && !user.is_active)
-    return matchesSearch && matchesRole && matchesStatus
+    return matchesSearch && matchesStatus
   })
 
   const filteredPersonnelUsers = personnelUsers.filter(user => {
@@ -806,7 +804,7 @@ export function ManageUsers() {
       const result = await response.json()
       
       // Optimized filtering - the API now returns clean data with proper JOINs
-      const filteredHistory = (result.history || []).filter((record: any) => {
+      const filteredHistory = (result.history || []).filter((record: { reason: string; assigned_by_admin: { full_name: string | null } }) => {
         // Filter out old auto-generated records and records without proper admin attribution
         return record.reason !== 'Unit reassignment via admin panel' && 
                record.assigned_by_admin?.full_name !== null &&
@@ -1065,7 +1063,7 @@ export function ManageUsers() {
                     <div className="space-y-3 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                       <h4 className="font-medium text-yellow-800">Unit Reassignment Required</h4>
                       <p className="text-sm text-yellow-700">
-                        You are changing this personnel's unit assignment. Please provide a reason for this reassignment.
+                        You are changing this personnel&apos;s unit assignment. Please provide a reason for this reassignment.
                       </p>
                       <div>
                         <Label htmlFor="reassignment-reason" className="text-red-600">

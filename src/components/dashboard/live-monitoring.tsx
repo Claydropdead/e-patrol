@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -19,6 +19,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase/client'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 
 // Mini map component for Live Monitoring
 function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
@@ -320,7 +321,7 @@ export function LiveMonitoring() {
   // Use singleton supabase instance to prevent multiple GoTrueClient warnings
 
   // Fetch personnel data from database
-  const fetchPersonnelData = async () => {
+  const fetchPersonnelData = useCallback(async () => {
     // Prevent multiple concurrent fetches
     if (loadingRef.current) {
       console.log('🔄 Fetch already in progress, skipping...')
@@ -422,7 +423,7 @@ export function LiveMonitoring() {
       loadingRef.current = false
       console.log('✅ Data fetch completed')
     }
-  }
+  }, []) // Empty dependency array for useCallback
 
   // Set up real-time subscriptions with error handling and timeout
   useEffect(() => {
@@ -456,8 +457,8 @@ export function LiveMonitoring() {
       }
     }, 8000) // Increased to 8 seconds for slower connections
 
-    let locationsChannel: any = null
-    let statusChannel: any = null
+    let locationsChannel: RealtimeChannel | null = null
+    let statusChannel: RealtimeChannel | null = null
 
     const setupSubscriptions = async () => {
       try {
@@ -542,7 +543,7 @@ export function LiveMonitoring() {
         supabase.removeChannel(statusChannel)
       }
     }
-  }, []) // Remove supabase from dependencies to prevent infinite loop
+  }, [fetchPersonnelData]) // Add fetchPersonnelData to dependencies
 
   // Calculate statistics
   const stats: PersonnelStats = {

@@ -8,7 +8,7 @@ import { useAuthStore } from '@/lib/stores/auth'
 import { toast } from 'sonner'
 
 export function DashboardHeader() {
-  const { adminAccount, personnel, userType, signOut } = useAuthStore()
+  const { adminAccount, personnel, signOut } = useAuthStore()
 
   const handleSignOut = async () => {
     try {

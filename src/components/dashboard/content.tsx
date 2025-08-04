@@ -16,7 +16,7 @@ interface DashboardContentProps {
 }
 
 export function DashboardContent({ activeTab }: DashboardContentProps) {
-  const { adminAccount, personnel, userType, loading } = useAuthStore()
+  const { loading } = useAuthStore()
 
   if (loading) {
     return (
