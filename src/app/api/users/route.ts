@@ -239,14 +239,14 @@ export async function PUT(request: NextRequest) {
 
     switch (action) {
       case 'toggle_status':
-        // Toggle user active status
-        const { data: currentUser } = await supabaseAdmin
+        // Get current user data for audit trail
+        const { data: currentUser, error: currentUserError } = await supabaseAdmin
           .from(tableName)
-          .select('is_active')
+          .select('*')
           .eq('id', userId)
           .single()
 
-        if (!currentUser) {
+        if (currentUserError || !currentUser) {
           return NextResponse.json(
             { error: 'User not found' },
             { status: 404 }
@@ -276,10 +276,43 @@ export async function PUT(request: NextRequest) {
           )
         }
 
+        // Log the audit trail
+        try {
+          await supabaseAdmin
+            .from('audit_logs')
+            .insert({
+              table_name: tableName,
+              operation: 'UPDATE',
+              old_data: currentUser,
+              new_data: updatedUser,
+              changed_by: tokenUser.user.id,
+              changed_at: new Date().toISOString(),
+              ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+              user_agent: request.headers.get('user-agent') || 'unknown'
+            })
+        } catch (auditError) {
+          console.error('Error logging audit trail:', auditError)
+          // Don't fail the main operation due to audit logging failure
+        }
+
         result = updatedUser
         break
 
       case 'update':
+        // Get current user data for audit trail
+        const { data: currentUpdateUser, error: currentUpdateError } = await supabaseAdmin
+          .from(tableName)
+          .select('*')
+          .eq('id', userId)
+          .single()
+
+        if (currentUpdateError || !currentUpdateUser) {
+          return NextResponse.json(
+            { error: 'User not found' },
+            { status: 404 }
+          )
+        }
+
         // Update user data
         const updatePayload: Record<string, unknown> = { ...data }
         
@@ -288,16 +321,37 @@ export async function PUT(request: NextRequest) {
           updatePayload.updated_at = new Date().toISOString()
         }
 
-        const { error: updateDataError } = await supabaseAdmin
+        const { data: newUpdatedUser, error: updateDataError } = await supabaseAdmin
           .from(tableName)
           .update(updatePayload)
           .eq('id', userId)
+          .select()
+          .single()
 
         if (updateDataError) {
           return NextResponse.json(
             { error: 'Failed to update user' },
             { status: 500 }
           )
+        }
+
+        // Log the audit trail
+        try {
+          await supabaseAdmin
+            .from('audit_logs')
+            .insert({
+              table_name: tableName,
+              operation: 'UPDATE',
+              old_data: currentUpdateUser,
+              new_data: newUpdatedUser,
+              changed_by: tokenUser.user.id,
+              changed_at: new Date().toISOString(),
+              ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+              user_agent: request.headers.get('user-agent') || 'unknown'
+            })
+        } catch (auditError) {
+          console.error('Error logging audit trail:', auditError)
+          // Don't fail the main operation due to audit logging failure
         }
 
         result = { message: 'User updated successfully' }
@@ -379,10 +433,10 @@ export async function DELETE(request: NextRequest) {
 
     const tableName = userType === 'admin' ? 'admin_accounts' : 'personnel'
 
-    // Get current user status
+    // Get current user status and full data for audit trail
     const { data: currentUser, error: fetchError } = await supabaseAdmin
       .from(tableName)
-      .select('is_active, full_name')
+      .select('*')
       .eq('id', userId)
       .single()
 
@@ -411,6 +465,25 @@ export async function DELETE(request: NextRequest) {
         )
       }
 
+      // Log the audit trail for permanent deletion
+      try {
+        await supabaseAdmin
+          .from('audit_logs')
+          .insert({
+            table_name: tableName,
+            operation: 'DELETE',
+            old_data: currentUser,
+            new_data: null,
+            changed_by: tokenUser.user.id,
+            changed_at: new Date().toISOString(),
+            ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+            user_agent: request.headers.get('user-agent') || 'unknown'
+          })
+      } catch (auditError) {
+        console.error('Error logging audit trail:', auditError)
+        // Don't fail the main operation due to audit logging failure
+      }
+
       operation = 'permanently deleted'
       result = { 
         message: `User ${currentUser.full_name} has been permanently deleted`,
@@ -428,10 +501,12 @@ export async function DELETE(request: NextRequest) {
         updateData.updated_at = new Date().toISOString()
       }
 
-      const { error: updateError } = await supabaseAdmin
+      const { data: updatedUser, error: updateError } = await supabaseAdmin
         .from(tableName)
         .update(updateData)
         .eq('id', userId)
+        .select()
+        .single()
 
       if (updateError) {
         console.error('Error deactivating user:', updateError)
@@ -439,6 +514,25 @@ export async function DELETE(request: NextRequest) {
           { error: 'Failed to deactivate user' },
           { status: 500 }
         )
+      }
+
+      // Log the audit trail for deactivation
+      try {
+        await supabaseAdmin
+          .from('audit_logs')
+          .insert({
+            table_name: tableName,
+            operation: 'UPDATE',
+            old_data: currentUser,
+            new_data: updatedUser,
+            changed_by: tokenUser.user.id,
+            changed_at: new Date().toISOString(),
+            ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+            user_agent: request.headers.get('user-agent') || 'unknown'
+          })
+      } catch (auditError) {
+        console.error('Error logging audit trail:', auditError)
+        // Don't fail the main operation due to audit logging failure
       }
 
       operation = 'deactivated'
@@ -460,6 +554,25 @@ export async function DELETE(request: NextRequest) {
           { error: 'Failed to permanently delete user' },
           { status: 500 }
         )
+      }
+
+      // Log the audit trail for permanent deletion of inactive user
+      try {
+        await supabaseAdmin
+          .from('audit_logs')
+          .insert({
+            table_name: tableName,
+            operation: 'DELETE',
+            old_data: currentUser,
+            new_data: null,
+            changed_by: tokenUser.user.id,
+            changed_at: new Date().toISOString(),
+            ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+            user_agent: request.headers.get('user-agent') || 'unknown'
+          })
+      } catch (auditError) {
+        console.error('Error logging audit trail:', auditError)
+        // Don't fail the main operation due to audit logging failure
       }
 
       operation = 'permanently deleted'

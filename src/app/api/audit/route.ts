@@ -59,13 +59,40 @@ export async function GET(request: NextRequest) {
     const operation = searchParams.get('operation') || ''
     const userId = searchParams.get('userId') || ''
 
-    // Build optimized query with selective fields
+    // First, let's test if the audit_logs table exists by doing a simple query
+    try {
+      const { data: testData, error: testError } = await supabaseAdmin
+        .from('audit_logs')
+        .select('*')
+        .limit(1)
+
+      if (testError) {
+        console.error('Audit logs table test error:', testError)
+        return NextResponse.json(
+          { error: `Database error: ${testError.message}` },
+          { status: 400 }
+        )
+      }
+
+      // If we get here, the table exists. Let's check what columns are available
+      const sampleRecord = testData?.[0]
+      console.log('Sample audit log record structure:', sampleRecord ? Object.keys(sampleRecord) : 'No records found')
+
+    } catch (error) {
+      console.error('Error testing audit_logs table:', error)
+      return NextResponse.json(
+        { error: 'Failed to access audit_logs table' },
+        { status: 500 }
+      )
+    }
+
+    // Build a safe query using the correct column names from your database
     let query = supabaseAdmin
       .from('audit_logs')
-      .select('id, changed_at, table_name, operation, new_data, changed_by', { count: 'exact' })
-      .order('changed_at', { ascending: false })
+      .select('*', { count: 'exact' })
+      .order('changed_at', { ascending: false })  // Use changed_at instead of created_at
 
-    // Apply filters with indexed columns first for better performance
+    // Apply filters safely
     if (table && table !== 'all') {
       query = query.eq('table_name', table)
     }
@@ -73,10 +100,10 @@ export async function GET(request: NextRequest) {
       query = query.eq('operation', operation)
     }
     if (userId) {
-      query = query.eq('changed_by', userId)
+      query = query.eq('changed_by', userId)  // Use changed_by instead of user_id
     }
 
-    // Apply pagination with limit first for better performance
+    // Apply pagination
     const from = (page - 1) * limit
     const to = from + limit - 1
 
@@ -84,26 +111,90 @@ export async function GET(request: NextRequest) {
       .range(from, to)
 
     if (auditError) {
+      console.error('Audit logs query error:', auditError)
       return NextResponse.json(
-        { error: auditError.message },
+        { error: `Query error: ${auditError.message}` },
         { status: 400 }
       )
     }
 
+    console.log('Successfully fetched audit logs:', auditLogs?.length || 0, 'records')
+
+    // Process audit logs to include user names (enhanced lookup from ALL user tables)
+    const userIds = [...new Set((auditLogs || []).map((log: any) => log.changed_by).filter(Boolean))]
+    
+    const [adminUsers, regularUsers, personnelUsers] = await Promise.all([
+      // Get admin user names
+      userIds.length > 0 
+        ? supabaseAdmin
+            .from('admin_accounts')
+            .select('id, full_name')
+            .in('id', userIds)
+        : { data: [] },
+      // Get regular user names  
+      userIds.length > 0
+        ? supabaseAdmin
+            .from('users')
+            .select('id, full_name')
+            .in('id', userIds)
+        : { data: [] },
+      // Get personnel names (they might also make changes)
+      userIds.length > 0
+        ? supabaseAdmin
+            .from('personnel')
+            .select('id, full_name')
+            .in('id', userIds)
+        : { data: [] }
+    ])
+
+    // Create lookup map for user names (prioritize admin_accounts, then users, then personnel)
+    const userNameMap: Record<string, string> = {}
+    
+    ;(adminUsers.data || []).forEach((user: any) => {
+      if (user.full_name) userNameMap[user.id] = user.full_name
+    })
+    
+    ;(regularUsers.data || []).forEach((user: any) => {
+      if (user.full_name && !userNameMap[user.id]) {
+        userNameMap[user.id] = user.full_name
+      }
+    })
+
+    ;(personnelUsers.data || []).forEach((user: any) => {
+      if (user.full_name && !userNameMap[user.id]) {
+        userNameMap[user.id] = user.full_name
+      }
+    })
+
+    // Return data structure using correct field names with user names
+    const processedLogs = (auditLogs || []).map((log: any) => ({
+      id: log.id,
+      changed_at: log.changed_at,
+      table_name: log.table_name,
+      operation: log.operation,
+      old_data: log.old_data,
+      new_data: log.new_data,
+      changed_by: log.changed_by,
+      changed_by_name: userNameMap[log.changed_by] || null
+    }))
+
     return NextResponse.json({
-      data: auditLogs || [],
+      data: processedLogs,
       pagination: {
         page,
         limit,
         total: count || 0,
         totalPages: Math.ceil((count || 0) / limit)
+      },
+      debug: {
+        sampleRecord: auditLogs?.[0] ? Object.keys(auditLogs[0]) : 'No records'
       }
     })
 
   } catch (error) {
     console.error('Error fetching audit logs:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: `Internal server error: ${error instanceof Error ? error.message : 'Unknown error'}` },
       { status: 500 }
     )
   }
@@ -174,7 +265,7 @@ export async function POST(request: NextRequest) {
           .from('audit_logs')
           .select('*', { count: 'estimated', head: true }),
         
-        // Count recent activity (last 24 hours)
+        // Count recent activity (last 24 hours) - use changed_at
         supabaseAdmin
           .from('audit_logs')
           .select('*', { count: 'exact', head: true })

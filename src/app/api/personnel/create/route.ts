@@ -95,20 +95,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Log the creation in audit_logs
+    // Log the creation in audit_logs with correct field names
     await supabaseAdmin
       .from('audit_logs')
       .insert({
-        action: 'CREATE_PERSONNEL',
-        user_id: tokenUser.user.id,
-        details: {
-          personnel_id: personnel.id,
-          personnel_email: personnel.email,
-          personnel_name: personnel.full_name,
-          province: personnel.province,
-          unit: personnel.unit,
-          sub_unit: personnel.sub_unit
-        }
+        table_name: 'personnel',
+        operation: 'INSERT',
+        old_data: null,
+        new_data: personnel,
+        changed_by: tokenUser.user.id,
+        changed_at: new Date().toISOString(),
+        ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        user_agent: request.headers.get('user-agent') || 'unknown',
+        assignment_change: false
       })
 
     return NextResponse.json({

@@ -140,18 +140,19 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Log the update in audit_logs
+    // Log the update in audit_logs with correct field names
     await supabaseAdmin
       .from('audit_logs')
       .insert({
-        action: 'UPDATE_PERSONNEL',
-        user_id: tokenUser.user.id,
-        details: {
-          personnel_id: userId,
-          personnel_email: updatedPersonnel.email,
-          changes: personnelUpdates,
-          assignment_changed: assignmentChanged
-        }
+        table_name: 'personnel',
+        operation: 'UPDATE',
+        old_data: currentPersonnel,
+        new_data: updatedPersonnel,
+        changed_by: tokenUser.user.id,
+        changed_at: new Date().toISOString(),
+        ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        user_agent: request.headers.get('user-agent') || 'unknown',
+        assignment_change: assignmentChanged
       })
 
     return NextResponse.json({

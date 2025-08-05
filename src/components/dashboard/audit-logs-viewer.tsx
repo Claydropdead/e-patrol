@@ -1,22 +1,23 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { supabase } from '@/lib/supabase/client'
+import { useApiData } from '@/lib/hooks/useApiData'
 import { useAuthStore } from '@/lib/stores/auth'
 import { toast } from 'sonner'
-import { RefreshCw, Activity } from 'lucide-react'
-import type { RealtimeChannel } from '@supabase/supabase-js'
+import { RefreshCw, Activity, Calendar, Database, User, Filter, X } from 'lucide-react'
 
 interface AuditEntry {
   id: string
   changed_at: string
   table_name: string
   operation: string
+  old_data: Record<string, unknown> | null
   new_data: Record<string, unknown> | null
   changed_by: string | null
+  changed_by_name?: string | null
 }
 
 interface AuditStats {
@@ -28,106 +29,67 @@ interface AuditStats {
   }>
 }
 
+interface AuditResponse {
+  data: AuditEntry[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
+interface StatsResponse {
+  totalAuditEntries: number
+  recentActivity: number
+  tableActivity: Array<{
+    table_name: string
+    count: number
+  }>
+}
+
 export function AuditLogsViewer() {
-  const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([])
-  const [stats, setStats] = useState<AuditStats | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [realTimeStatus, setRealTimeStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
-  const [usePolling, setUsePolling] = useState(false)
-  const [autoRefresh, setAutoRefresh] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [filters, setFilters] = useState({
     table: 'all',
     operation: 'all',
     userId: '',
     page: 1
   })
+  const [refreshing, setRefreshing] = useState(false)
 
-  // Get auth store values - use selector to avoid dependency issues
-  const sessionRefreshed = useAuthStore(state => state.sessionRefreshed)
+  // Use stable API hook for audit logs
+  const {
+    data: auditResponse,
+    loading,
+    error,
+    refresh
+  } = useApiData<AuditResponse>({
+    endpoint: '/api/audit',
+    params: {
+      page: filters.page.toString(),
+      limit: '25',
+      ...(filters.table !== 'all' && { table: filters.table }),
+      ...(filters.operation !== 'all' && { operation: filters.operation }),
+      ...(filters.userId && { userId: filters.userId })
+    },
+    onError: (errorMsg) => toast.error(`Audit logs error: ${errorMsg}`)
+  })
 
-  // Helper function to format audit data
-  const formatAuditData = (log: AuditEntry): string => {
-    if (!log.new_data) return 'No data available'
-    
-    const data = log.new_data
-    const relevantFields = ['name', 'email', 'role', 'username', 'first_name', 'last_name', 'title']
-    
-    const displayData = relevantFields
-      .filter(field => data[field])
-      .map(field => `${field}: ${data[field]}`)
-      .join(', ')
-    
-    return displayData || 'Data updated'
-  }
+  // Separate hook for stats
+  const [stats, setStats] = useState<StatsResponse | null>(null)
+  const [statsLoading, setStatsLoading] = useState(true)
 
-  const fetchAuditLogs = useCallback(async (showLoading = true) => {
-    if (showLoading) setLoading(true)
-    setError(null)
-    
-    try {
-      // Use the auth store method directly to avoid dependency issues
-      const session = await useAuthStore.getState().getValidSession()
-      if (!session) {
-        throw new Error('Authentication required - please log in again')
-      }
-
-      const params = new URLSearchParams({
-        page: filters.page.toString(),
-        limit: '25',
-        // Add cache-busting parameter
-        _t: Date.now().toString()
-      })
-
-      if (filters.table && filters.table !== 'all') params.append('table', filters.table)
-      if (filters.operation && filters.operation !== 'all') params.append('operation', filters.operation)
-      if (filters.userId) params.append('userId', filters.userId)
-
-      const response = await fetch(`/api/audit?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-        }
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-      }
-
-      const result = await response.json()
-
-      if (result.error) {
-        throw new Error(result.error)
-      }
-
-      setAuditLogs(result.data || [])
-      
-    } catch (error) {
-      console.error('Error fetching audit logs:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch audit logs'
-      setError(errorMessage)
-      toast.error(errorMessage)
-    } finally {
-      if (showLoading) setLoading(false)
-    }
-  }, [filters.page, filters.table, filters.operation, filters.userId]) // Remove getValidSession dependency
-
-  const fetchStats = useCallback(async () => {
+  // Fetch stats function
+  const fetchStats = async () => {
     try {
       const session = await useAuthStore.getState().getValidSession()
       if (!session) return
 
-      const response = await fetch(`/api/audit?_t=${Date.now()}`, {
+      const response = await fetch('/api/audit', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0',
         },
         body: JSON.stringify({ action: 'stats' })
       })
@@ -137,10 +99,52 @@ export function AuditLogsViewer() {
         setStats(result)
       }
     } catch (error) {
-      console.error('Error fetching stats:', error)
+      console.warn('Failed to fetch stats:', error)
+    } finally {
+      setStatsLoading(false)
     }
-  }, [])
+  }
 
+  const auditLogs = auditResponse?.data || []
+  const pagination = auditResponse?.pagination
+
+  // Helper function to get user-friendly table names
+  const getTableDisplayName = (tableName: string): string => {
+    const tableNames: Record<string, string> = {
+      'users': 'User Accounts',
+      'personnel': 'Personnel Records',
+      'admin_accounts': 'Administrator Accounts',
+      'locations': 'Location Data',
+      'assignment_history': 'Assignment History',
+      'audit_logs': 'System Audit',
+      'geofences': 'Geofence Areas',
+      'live_locations': 'Live Tracking'
+    }
+    return tableNames[tableName] || 'System Data'
+  }
+
+  // Helper function to format audit data changes
+  const formatAuditChanges = (log: AuditEntry): { old: string; new: string } => {
+    const relevantFields = ['name', 'email', 'role', 'username', 'first_name', 'last_name', 'title', 'full_name', 'rank', 'badge_number', 'phone', 'is_active']
+    
+    const formatData = (data: Record<string, unknown> | null): string => {
+      if (!data) return 'No data'
+      
+      const displayData = relevantFields
+        .filter(field => data[field] !== undefined && data[field] !== null)
+        .map(field => `${field}: ${data[field]}`)
+        .join(', ')
+      
+      return displayData || 'System data updated'
+    }
+
+    return {
+      old: formatData(log.old_data),
+      new: formatData(log.new_data)
+    }
+  }
+
+  // Operation badge styling
   const getOperationBadge = (operation: string) => {
     const styles = {
       INSERT: 'bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full',
@@ -156,196 +160,39 @@ export function AuditLogsViewer() {
     )
   }
 
-  const loadAuditData = useCallback(async (showLoading = true) => {
-    await Promise.all([
-      fetchAuditLogs(showLoading),
-      fetchStats()
-    ])
-  }, [fetchAuditLogs, fetchStats])
-
+  // Manual refresh handler
   const handleRefresh = async () => {
     setRefreshing(true)
     try {
-      await loadAuditData(false)
+      refresh()
+      fetchStats()
       toast.success('Audit logs refreshed')
     } catch (err) {
-      console.error('Refresh error:', err)
       toast.error('Failed to refresh audit logs')
     } finally {
       setRefreshing(false)
     }
   }
 
-  // Load data when component mounts
-  useEffect(() => {
-    loadAuditData(true)
-  }, [loadAuditData]) // Add loadAuditData to dependencies
-
-  // Separate effect for filter changes
-  useEffect(() => {
-    fetchAuditLogs(true)
-  }, [fetchAuditLogs])
-
-  // Reload data when session is refreshed
-  useEffect(() => {
-    if (sessionRefreshed > 0) {
-      console.log('Session refreshed, reloading audit logs...')
-      fetchAuditLogs(false) // Silent reload without loading spinner
-    }
-  }, [sessionRefreshed, fetchAuditLogs])
-
-  // Real-time subscription for audit logs
-  useEffect(() => {
-    const channel: RealtimeChannel = supabase
-      .channel('audit-logs-changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'audit_logs' },
-        (payload) => {
-          console.log('Audit log change:', payload)
-          // Refresh audit logs when changes occur
-          fetchAuditLogs(false)
-        }
-      )
-    
-    const setupRealTime = async () => {
-      try {
-        const session = await useAuthStore.getState().getValidSession()
-        if (!session) {
-          console.log('No session available for real-time subscription')
-          setRealTimeStatus('disconnected')
-          setUsePolling(true) // Use polling instead
-          return
-        }
-
-        // For now, skip real-time and use polling due to schema issues
-        console.log('Skipping real-time due to schema binding issues, using polling instead')
-        setRealTimeStatus('disconnected')
-        setUsePolling(true)
-        return
-
-        // TODO: Re-enable when real-time is properly configured
-        /* 
-        // Test if we can query the audit_logs table first
-        console.log('Testing audit_logs table access...')
-        const { data: testQuery, error: testError } = await supabase
-          .from('audit_logs')
-          .select('id')
-          .limit(1)
-          .maybeSingle()
-
-        if (testError) {
-          console.error('Cannot access audit_logs table:', testError)
-          setRealTimeStatus('disconnected')
-          setUsePolling(true)
-          return
-        }
-
-        console.log('audit_logs table accessible, setting up real-time...')
-
-        // Check if real-time is available by testing the connection
-        channel = supabase
-          .channel(`audit-logs-realtime-${Date.now()}`) // Unique channel name
-          .on(
-            'postgres_changes',
-            {
-              event: 'INSERT', // Only listen to INSERT events initially
-              schema: 'public',
-              table: 'audit_logs',
-              filter: undefined // Remove any filters to avoid binding issues
-            },
-            (payload) => {
-              console.log('Real-time audit log insert:', payload)
-              
-              try {
-                if (payload.eventType === 'INSERT' && payload.new) {
-                  // Validate the payload structure before using it
-                  const newEntry = payload.new as any
-                  if (newEntry.id && newEntry.changed_at && newEntry.table_name && newEntry.operation) {
-                    // Add new audit log to the beginning of the list
-                    setAuditLogs(prevLogs => [newEntry as AuditEntry, ...prevLogs])
-                    
-                    // Update stats
-                    fetchStats()
-                    
-                    // Show notification for new audit entry
-                    toast.info(`New ${newEntry.operation}: ${newEntry.table_name}`)
-                  } else {
-                    console.warn('Invalid audit log payload structure:', newEntry)
-                  }
-                }
-              } catch (payloadError) {
-                console.error('Error processing real-time payload:', payloadError)
-              }
-            }
-          )
-          .subscribe((status, err) => {
-            console.log('Real-time subscription status:', status)
-            if (err) {
-              console.error('Real-time subscription error:', err)
-            }
-            
-            if (status === 'SUBSCRIBED') {
-              console.log('Successfully subscribed to audit logs real-time updates')
-              setRealTimeStatus('connected')
-            } else if (status === 'CHANNEL_ERROR') {
-              console.error('Error subscribing to audit logs real-time updates')
-              setRealTimeStatus('disconnected')
-              setUsePolling(true) // Enable polling fallback
-              // Real-time not available, but that's ok - manual refresh still works
-              toast.warning('Real-time updates unavailable. Using periodic refresh instead.')
-            } else if (status === 'TIMED_OUT') {
-              console.error('Real-time subscription timed out')
-              setRealTimeStatus('disconnected')
-              setUsePolling(true) // Enable polling fallback
-            } else if (status === 'CLOSED') {
-              console.log('Real-time subscription closed')
-              setRealTimeStatus('disconnected')
-            }
-          })
-        */
-      } catch (error) {
-        console.error('Failed to setup real-time subscription:', error)
-        setRealTimeStatus('disconnected')
-        setUsePolling(true) // Enable polling fallback
-        // Don't show error toast - real-time is optional, manual refresh still works
-        console.log('Real-time updates not available, falling back to periodic refresh')
-      }
-    }
-
-    setupRealTime()
-
-    // Cleanup subscription on component unmount
-    return () => {
-      if (channel) {
-        console.log('Unsubscribing from audit logs real-time updates')
-        try {
-          supabase.removeChannel(channel)
-        } catch (cleanupError) {
-          console.error('Error cleaning up real-time subscription:', cleanupError)
-        }
-      }
-    }
-  }, []) // Empty dependency array - only run once
-
-  // Auto-refresh polling when real-time is not available
-  useEffect(() => {
-    if (!usePolling || !autoRefresh) return
-
-    console.log('Starting auto-refresh polling for audit logs (30 seconds)')
-    const pollInterval = setInterval(() => {
-      console.log('Auto-refreshing audit logs...')
-      loadAuditData(false) // Don't show loading spinner for auto-refresh
-    }, 30000) // Poll every 30 seconds
-
-    return () => {
-      console.log('Stopping auto-refresh polling')
-      clearInterval(pollInterval)
-    }
-  }, [usePolling, autoRefresh, loadAuditData])
-
+  // Filter change handler
   const handleFilterChange = (key: string, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value, page: 1 }))
   }
+
+  // Clear all filters
+  const clearFilters = () => {
+    setFilters({ table: 'all', operation: 'all', userId: '', page: 1 })
+  }
+
+  // Refetch when filters change
+  useEffect(() => {
+    refresh()
+  }, [filters, refresh])
+
+  // Fetch stats on mount
+  useEffect(() => {
+    fetchStats()
+  }, [])
 
   if (loading) {
     return (
@@ -368,25 +215,15 @@ export function AuditLogsViewer() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold">Audit Logs</h2>
-          <Button 
-            onClick={handleRefresh} 
-            variant="outline"
-            disabled={refreshing}
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-            {refreshing ? 'Retrying...' : 'Retry'}
+          <Button onClick={handleRefresh} variant="outline">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Retry
           </Button>
         </div>
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <p className="text-red-800">Error: {error}</p>
-          <Button 
-            onClick={handleRefresh} 
-            className="mt-2" 
-            variant="outline" 
-            size="sm"
-            disabled={refreshing}
-          >
-            {refreshing ? 'Retrying...' : 'Try Again'}
+          <Button onClick={handleRefresh} className="mt-2" variant="outline" size="sm">
+            Try Again
           </Button>
         </div>
       </div>
@@ -395,59 +232,28 @@ export function AuditLogsViewer() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-        <div className="flex items-center space-x-4">
-          <h2 className="text-2xl font-bold">Audit Logs</h2>
-          {/* Real-time status indicator */}
-          <div className="flex items-center space-x-2">
-            <div className={`w-2 h-2 rounded-full ${
-              realTimeStatus === 'connected' ? 'bg-green-500' : 
-              realTimeStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 
-              usePolling && autoRefresh ? 'bg-blue-500 animate-pulse' :
-              'bg-red-500'
-            }`}></div>
-            <span className="text-sm text-gray-600">
-              {realTimeStatus === 'connected' ? 'Live' : 
-               realTimeStatus === 'connecting' ? 'Connecting...' : 
-               usePolling && autoRefresh ? 'Auto-refresh (30s)' :
-               usePolling ? 'Auto-refresh off' :
-               'Manual only'}
-            </span>
-          </div>
-        </div>
-        
-        <div className="flex items-center space-x-3">
-          {/* Auto-refresh toggle */}
-          {usePolling && (
-            <Button
-              onClick={() => setAutoRefresh(!autoRefresh)}
-              variant={autoRefresh ? "default" : "outline"}
-              size="sm"
-            >
-              <Activity className={`h-4 w-4 mr-2 ${autoRefresh ? 'animate-pulse' : ''}`} />
-              Auto-refresh {autoRefresh ? 'ON' : 'OFF'}
-            </Button>
-          )}
-          
-          {/* Manual refresh button */}
-          <Button 
-            onClick={handleRefresh} 
-            variant="outline" 
-            size="sm"
-            disabled={refreshing}
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-            {refreshing ? 'Refreshing...' : 'Refresh'}
-          </Button>
-        </div>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold flex items-center">
+          <Database className="h-6 w-6 mr-2 text-blue-600" />
+          Audit Logs
+        </h2>
+        <Button 
+          onClick={handleRefresh} 
+          variant="outline"
+          disabled={refreshing}
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
       </div>
 
       {/* Stats Cards */}
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white p-4 rounded-lg border">
+          <div className="bg-white p-4 rounded-lg border shadow-sm">
             <div className="flex items-center">
-              <Activity className="h-5 w-5 text-blue-500 mr-2" />
+              <Database className="h-5 w-5 text-blue-500 mr-2" />
               <div>
                 <p className="text-sm text-gray-600">Total Entries</p>
                 <p className="text-2xl font-bold">{stats.totalAuditEntries}</p>
@@ -455,7 +261,7 @@ export function AuditLogsViewer() {
             </div>
           </div>
           
-          <div className="bg-white p-4 rounded-lg border">
+          <div className="bg-white p-4 rounded-lg border shadow-sm">
             <div className="flex items-center">
               <Activity className="h-5 w-5 text-green-500 mr-2" />
               <div>
@@ -465,9 +271,9 @@ export function AuditLogsViewer() {
             </div>
           </div>
           
-          <div className="bg-white p-4 rounded-lg border">
+          <div className="bg-white p-4 rounded-lg border shadow-sm">
             <div className="flex items-center">
-              <Activity className="h-5 w-5 text-purple-500 mr-2" />
+              <Calendar className="h-5 w-5 text-purple-500 mr-2" />
               <div>
                 <p className="text-sm text-gray-600">Active Tables</p>
                 <p className="text-2xl font-bold">{stats.tableActivity?.length || 0}</p>
@@ -478,18 +284,32 @@ export function AuditLogsViewer() {
       )}
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-lg border">
-        <h3 className="text-lg font-semibold mb-4">Filters</h3>
+      <div className="bg-white p-4 rounded-lg border shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold flex items-center">
+            <Filter className="h-5 w-5 mr-2 text-gray-600" />
+            Filters
+          </h3>
+          {(filters.table !== 'all' || filters.operation !== 'all' || filters.userId) && (
+            <Button onClick={clearFilters} variant="outline" size="sm">
+              <X className="h-4 w-4 mr-1" />
+              Clear All
+            </Button>
+          )}
+        </div>
+        
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Select value={filters.table} onValueChange={(value) => handleFilterChange('table', value)}>
             <SelectTrigger>
-              <SelectValue placeholder="Select table" />
+              <SelectValue placeholder="Select module" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Tables</SelectItem>
-              <SelectItem value="users">Users</SelectItem>
-              <SelectItem value="personnel">Personnel</SelectItem>
-              <SelectItem value="locations">Locations</SelectItem>
+              <SelectItem value="all">All Modules</SelectItem>
+              <SelectItem value="users">User Accounts</SelectItem>
+              <SelectItem value="personnel">Personnel Records</SelectItem>
+              <SelectItem value="admin_accounts">Administrator Accounts</SelectItem>
+              <SelectItem value="locations">Location Data</SelectItem>
+              <SelectItem value="assignment_history">Assignment History</SelectItem>
             </SelectContent>
           </Select>
 
@@ -505,26 +325,31 @@ export function AuditLogsViewer() {
             </SelectContent>
           </Select>
 
-          <Input
-            placeholder="User ID"
-            value={filters.userId}
-            onChange={(e) => handleFilterChange('userId', e.target.value)}
-          />
+          <div className="relative">
+            <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Filter by User ID"
+              value={filters.userId}
+              onChange={(e) => handleFilterChange('userId', e.target.value)}
+              className="pl-10"
+            />
+          </div>
 
-          <Button 
-            onClick={() => setFilters({ table: 'all', operation: 'all', userId: '', page: 1 })}
-            variant="outline"
-          >
-            Clear Filters
-          </Button>
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-600">Page {filters.page}</span>
+          </div>
         </div>
       </div>
 
       {/* Audit Logs Table */}
-      <div className="bg-white rounded-lg border">
+      <div className="bg-white rounded-lg border shadow-sm">
         <div className="p-4 border-b">
-          <h3 className="text-lg font-semibold">Recent Activity</h3>
+          <h3 className="text-lg font-semibold flex items-center">
+            <Activity className="h-5 w-5 mr-2 text-blue-600" />
+            Recent Activity
+          </h3>
         </div>
+        
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50">
@@ -533,46 +358,77 @@ export function AuditLogsViewer() {
                   Timestamp
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Table
+                  Module
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Operation
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Changes
+                  Old Data
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  User
+                  New Data
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Changed By
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {auditLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
-                    No audit logs found
+                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                    <Database className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                    No audit logs found with current filters
                   </td>
                 </tr>
               ) : (
-                auditLogs.map((log, index) => (
-                  <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {new Date(log.changed_at).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                      <span className="font-medium">{log.table_name}</span>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      {getOperationBadge(log.operation)}
-                    </td>
-                    <td className="px-4 py-4 text-sm text-gray-900 max-w-xs truncate">
-                      {formatAuditData(log)}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {log.changed_by || 'System'}
-                    </td>
-                  </tr>
-                ))
+                auditLogs.map((log, index) => {
+                  const changes = formatAuditChanges(log)
+                  return (
+                    <tr key={`${log.id}-${index}`} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {new Date(log.changed_at).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span className="font-medium bg-gray-100 px-2 py-1 rounded text-xs">
+                          {getTableDisplayName(log.table_name)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        {getOperationBadge(log.operation)}
+                      </td>
+                      <td className="px-4 py-4 text-sm max-w-xs">
+                        <div className="truncate" title={changes.old}>
+                          {log.operation === 'INSERT' ? (
+                            <span className="text-gray-400 italic">New record</span>
+                          ) : (
+                            <span className="text-red-600 bg-red-50 px-2 py-1 rounded text-xs">
+                              {changes.old}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-sm max-w-xs">
+                        <div className="truncate" title={changes.new}>
+                          {log.operation === 'DELETE' ? (
+                            <span className="text-gray-400 italic">Record deleted</span>
+                          ) : (
+                            <span className="text-green-600 bg-green-50 px-2 py-1 rounded text-xs">
+                              {changes.new}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span className="flex items-center">
+                          <User className="h-4 w-4 mr-1 text-gray-400" />
+                          {log.changed_by_name || log.changed_by || 'System'}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
@@ -580,23 +436,30 @@ export function AuditLogsViewer() {
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between bg-white px-4 py-3 border rounded-lg">
         <Button
           onClick={() => handleFilterChange('page', (filters.page - 1).toString())}
           disabled={filters.page <= 1}
           variant="outline"
+          size="sm"
         >
           Previous
         </Button>
         
-        <span className="text-sm text-gray-600">
-          Page {filters.page}
-        </span>
+        <div className="flex items-center space-x-2">
+          <span className="text-sm text-gray-600">
+            Page {filters.page} {pagination && `of ${pagination.totalPages}`}
+          </span>
+          <span className="text-xs text-gray-400">
+            ({auditLogs.length} entries{pagination && ` / ${pagination.total} total`})
+          </span>
+        </div>
         
         <Button
           onClick={() => handleFilterChange('page', (filters.page + 1).toString())}
-          disabled={auditLogs.length < 25}
+          disabled={!pagination || auditLogs.length < pagination.limit}
           variant="outline"
+          size="sm"
         >
           Next
         </Button>

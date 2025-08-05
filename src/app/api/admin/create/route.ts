@@ -203,6 +203,29 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      // Log the admin account creation in audit_logs
+      await supabaseAdmin
+        .from('audit_logs')
+        .insert({
+          table_name: 'admin_accounts',
+          operation: 'INSERT',
+          old_data: null,
+          new_data: {
+            id: authData.user.id,
+            rank,
+            full_name: fullName,
+            email,
+            role,
+            is_active: isActive ?? true,
+            ...dbAssignments
+          },
+          changed_by: tokenUser.user.id,
+          changed_at: new Date().toISOString(),
+          ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+          user_agent: request.headers.get('user-agent') || 'unknown',
+          assignment_change: false
+        })
+
       return NextResponse.json({
         message: 'Admin account created successfully',
         user: {

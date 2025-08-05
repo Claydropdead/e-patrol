@@ -58,6 +58,20 @@ export async function PUT(request: NextRequest) {
       )
     }
 
+    // Get the current admin account data for audit trail
+    const { data: currentAdmin, error: fetchError } = await supabaseAdmin
+      .from('admin_accounts')
+      .select('*')
+      .eq('id', userId)
+      .single()
+
+    if (fetchError || !currentAdmin) {
+      return NextResponse.json(
+        { error: 'Admin account not found' },
+        { status: 404 }
+      )
+    }
+
     // Update admin account
     const { data: updatedAdmin, error: updateError } = await supabaseAdmin
       .from('admin_accounts')
@@ -78,6 +92,25 @@ export async function PUT(request: NextRequest) {
         { error: updateError.message },
         { status: 400 }
       )
+    }
+
+    // Log the audit trail
+    try {
+      await supabaseAdmin
+        .from('audit_logs')
+        .insert({
+          table_name: 'admin_accounts',
+          operation: 'UPDATE',
+          old_data: currentAdmin,
+          new_data: updatedAdmin,
+          changed_by: tokenUser.user.id,
+          changed_at: new Date().toISOString(),
+          ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+          user_agent: request.headers.get('user-agent') || 'unknown'
+        })
+    } catch (auditError) {
+      console.error('Error logging audit trail:', auditError)
+      // Don't fail the main operation due to audit logging failure
     }
 
     return NextResponse.json({
