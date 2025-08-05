@@ -51,97 +51,81 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { 
-      rank, 
-      fullName, 
-      email, 
-      password, 
-      contactNumber, 
-      province, 
-      unit, 
-      subUnit, 
-      isActive 
-    } = await request.json()
+    // Parse request body
+    const body = await request.json()
+    const { rank, full_name, email, contact_number, province, unit, sub_unit } = body
 
     // Validate required fields
-    if (!rank || !fullName || !email || !password || !province || !unit || !subUnit) {
+    if (!rank || !full_name || !email || !province || !unit || !sub_unit) {
       return NextResponse.json(
-        { error: 'All required fields must be provided' },
+        { error: 'Missing required fields: rank, full_name, email, province, unit, sub_unit' },
         { status: 400 }
       )
     }
 
-    // Validate province
-    const validProvinces = [
-      'Oriental Mindoro PPO',
-      'Occidental Mindoro PPO',
-      'Marinduque PPO',
-      'Romblon PPO',
-      'Palawan PPO',
-      'Puerto Princesa CPO',
-      'RMFB'
-    ]
-    if (!validProvinces.includes(province)) {
-      return NextResponse.json(
-        { error: 'Invalid province specified' },
-        { status: 400 }
-      )
-    }
+    // Create personnel record
+    const { data: personnel, error: createError } = await supabaseAdmin
+      .from('personnel')
+      .insert({
+        rank,
+        full_name,
+        email,
+        contact_number: contact_number || null,
+        province,
+        unit,
+        sub_unit,
+        created_by: tokenUser.user.id
+      })
+      .select()
+      .single()
 
-    // Create auth user
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true
-    })
-
-    if (authError) {
-      return NextResponse.json(
-        { error: authError.message },
-        { status: 400 }
-      )
-    }
-
-    if (authData.user) {
-      // Create personnel profile
-      const { error: profileError } = await supabaseAdmin
-        .from('personnel')
-        .insert({
-          id: authData.user.id,
-          rank,
-          full_name: fullName,
-          email,
-          contact_number: contactNumber || null,
-          province,
-          unit,
-          sub_unit: subUnit,
-          is_active: isActive ?? true
-        })
-
-      if (profileError) {
-        // If profile creation fails, delete the auth user
-        await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
+    if (createError) {
+      console.error('Error creating personnel:', createError)
+      
+      if (createError.code === '23505') {
         return NextResponse.json(
-          { error: profileError.message },
-          { status: 400 }
+          { error: 'Email already exists' },
+          { status: 409 }
         )
       }
-
-      return NextResponse.json({
-        message: 'Personnel account created successfully',
-        user: {
-          id: authData.user.id,
-          email,
-          province,
-          subUnit
-        }
-      })
+      
+      return NextResponse.json(
+        { error: 'Failed to create personnel account' },
+        { status: 500 }
+      )
     }
 
-    return NextResponse.json(
-      { error: 'Failed to create user' },
-      { status: 500 }
-    )
+    // Log the creation in audit_logs
+    await supabaseAdmin
+      .from('audit_logs')
+      .insert({
+        action: 'CREATE_PERSONNEL',
+        user_id: tokenUser.user.id,
+        details: {
+          personnel_id: personnel.id,
+          personnel_email: personnel.email,
+          personnel_name: personnel.full_name,
+          province: personnel.province,
+          unit: personnel.unit,
+          sub_unit: personnel.sub_unit
+        }
+      })
+
+    return NextResponse.json({
+      message: 'Personnel account created successfully',
+      personnel: {
+        id: personnel.id,
+        rank: personnel.rank,
+        full_name: personnel.full_name,
+        email: personnel.email,
+        contact_number: personnel.contact_number,
+        province: personnel.province,
+        unit: personnel.unit,
+        sub_unit: personnel.sub_unit,
+        is_active: personnel.is_active,
+        created_at: personnel.created_at
+      }
+    })
 
   } catch (error) {
     console.error('Error creating personnel account:', error)

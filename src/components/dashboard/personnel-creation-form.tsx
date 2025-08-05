@@ -59,14 +59,14 @@ export function PersonnelCreationForm() {
         },
         body: JSON.stringify({
           rank: formData.rank,
-          fullName: formData.fullName,
+          full_name: formData.fullName,
           email: formData.email,
           password: formData.password,
-          contactNumber: formData.contactNumber,
+          contact_number: formData.contactNumber,
           province: formData.province,
           unit: formData.unit,
-          subUnit: formData.subUnit,
-          isActive: formData.isActive
+          sub_unit: formData.subUnit,
+          is_active: formData.isActive
         })
       })
 

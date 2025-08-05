@@ -50,7 +50,6 @@ interface PersonnelUser {
   full_name: string
   email: string
   contact_number?: string
-  region: string
   province: string
   unit: string
   sub_unit: string
@@ -61,20 +60,20 @@ interface PersonnelUser {
 
 interface AssignmentHistory {
   id: string
-  previous_unit: string
-  previous_sub_unit: string
-  previous_province: string
-  new_unit: string
-  new_sub_unit: string
-  new_province: string
-  assignment_date: string
-  assigned_by: string
-  reason: string
-  notes?: string
-  assigned_by_admin?: {
+  personnel_id: string
+  previous_unit: string | null
+  previous_sub_unit: string | null
+  previous_province: string | null
+  new_unit: string | null
+  new_sub_unit: string | null
+  new_province: string | null
+  changed_at: string
+  changed_by: string | null
+  reason: string | null
+  changed_by_admin?: {
     full_name: string
     rank: string
-  }
+  } | null
 }
 
 type UserType = 'admin' | 'personnel'
@@ -196,7 +195,6 @@ export function ManageUsers() {
           full_name: 'Jose Antonio Dela Cruz',
           email: 'ja.delacruz@pnp.gov.ph',
           contact_number: '+63 917 123 4567',
-          region: 'MIMAROPA',
           province: 'Oriental Mindoro PPO',
           unit: 'Oriental Mindoro PPO',
           sub_unit: 'Calapan CPS - Investigation Unit',
@@ -210,7 +208,6 @@ export function ManageUsers() {
           full_name: 'Ana Marie Gonzales',
           email: 'am.gonzales@pnp.gov.ph',
           contact_number: '+63 917 765 4321',
-          region: 'MIMAROPA',
           province: 'Palawan PPO',
           unit: 'Palawan PPO',
           sub_unit: 'Puerto Princesa CPS - Patrol Unit',
@@ -893,14 +890,16 @@ export function ManageUsers() {
 
       const result = await response.json()
       
-      // Optimized filtering - the API now returns clean data with proper JOINs
-      const filteredHistory = (result.history || []).filter((record: { reason: string; assigned_by_admin: { full_name: string | null } }) => {
-        // Filter out old auto-generated records and records without proper admin attribution
-        return record.reason !== 'Unit reassignment via admin panel' && 
-               record.assigned_by_admin?.full_name !== null &&
-               record.assigned_by_admin?.full_name !== undefined
+      // Get assignment history data - handle both new and old data formats
+      const historyData = result.history || []
+      console.log('Assignment history received:', historyData)
+      
+      // Simple validation - just ensure we have basic required fields
+      const filteredHistory = historyData.filter((record: any) => {
+        return record.personnel_id && (record.previous_unit || record.new_unit)
       })
       
+      console.log('Filtered assignment history:', filteredHistory)
       setAssignmentHistory(filteredHistory)
       
       // Cache the results for 2 minutes (shorter for live data)
@@ -1321,7 +1320,7 @@ export function ManageUsers() {
                             Assignment #{assignmentHistory.length - index}
                           </Badge>
                           <span className="text-sm text-gray-500">
-                            {new Date(assignment.assignment_date).toLocaleDateString('en-US', {
+                            {new Date(assignment.changed_at).toLocaleDateString('en-US', {
                               year: 'numeric',
                               month: 'long',
                               day: 'numeric',
@@ -1349,15 +1348,15 @@ export function ManageUsers() {
                           <span className="text-sm text-gray-600">{assignment.reason}</span>
                         </div>
                         
-                        {assignment.notes && (
+                        {assignment.reason && (
                           <div className="mb-2">
-                            <span className="text-sm font-medium text-gray-700">Notes: </span>
-                            <span className="text-sm text-gray-600">{assignment.notes}</span>
+                            <span className="text-sm font-medium text-gray-700">Reason: </span>
+                            <span className="text-sm text-gray-600">{assignment.reason}</span>
                           </div>
                         )}
                         
                         <div className="text-sm text-gray-500">
-                          Assigned by: {assignment.assigned_by_admin?.rank || ''} {assignment.assigned_by_admin?.full_name || 'System'}
+                          Changed by: {assignment.changed_by_admin?.rank || ''} {assignment.changed_by_admin?.full_name || 'System'}
                         </div>
                       </div>
                     </div>

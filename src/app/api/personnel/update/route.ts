@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
+// Use service role key for admin operations
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -14,7 +15,7 @@ const supabaseAdmin = createClient(
 
 export async function PUT(request: NextRequest) {
   try {
-    // Verify authentication
+    // SECURITY: Verify the requesting user is an authorized superadmin
     const authHeader = request.headers.get('authorization')
     if (!authHeader) {
       return NextResponse.json(
@@ -23,6 +24,7 @@ export async function PUT(request: NextRequest) {
       )
     }
 
+    // Extract token and verify with Supabase
     const token = authHeader.replace('Bearer ', '')
     const { data: tokenUser, error: tokenError } = await supabaseAdmin.auth.getUser(token)
     
@@ -33,7 +35,7 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // Verify superadmin access
+    // Verify the user is an active superadmin
     const { data: adminCheck, error: adminError } = await supabaseAdmin
       .from('admin_accounts')
       .select('role, is_active')
@@ -49,11 +51,15 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    const { userId, updates } = await request.json()
+    // Parse request body
+    const body = await request.json()
+    const { userId, updates } = body
+
+    console.log('Personnel update request:', { userId, updates })
 
     if (!userId || !updates) {
       return NextResponse.json(
-        { error: 'Missing required fields: userId and updates' },
+        { error: 'Missing required fields: userId, updates' },
         { status: 400 }
       )
     }
@@ -61,87 +67,86 @@ export async function PUT(request: NextRequest) {
     // Get current personnel data for assignment history comparison
     const { data: currentPersonnel, error: getCurrentError } = await supabaseAdmin
       .from('personnel')
-      .select('unit, sub_unit, province')
+      .select('*')
       .eq('id', userId)
       .single()
 
-    if (getCurrentError) {
+    console.log('Current personnel lookup:', { currentPersonnel, getCurrentError })
+
+    if (getCurrentError || !currentPersonnel) {
+      console.error('Personnel not found:', getCurrentError)
       return NextResponse.json(
         { error: 'Personnel not found' },
         { status: 404 }
       )
     }
 
-    // Check if assignment is changing
+    // Check if assignment changed (for history tracking)
     const assignmentChanged = (
       currentPersonnel.unit !== updates.unit ||
       currentPersonnel.sub_unit !== updates.sub_unit ||
       currentPersonnel.province !== updates.province
     )
 
-    // Update personnel record
+    // Separate personnel updates from reassignment data
+    const { reassignment_reason, reassignment_notes, ...personnelUpdates } = updates
+
+    // Update personnel record (excluding reassignment fields)
     const { data: updatedPersonnel, error: updateError } = await supabaseAdmin
       .from('personnel')
       .update({
-        rank: updates.rank,
-        full_name: updates.full_name,
-        email: updates.email,
-        contact_number: updates.contact_number,
-        province: updates.province,
-        unit: updates.unit,
-        sub_unit: updates.sub_unit,
-        is_active: updates.is_active,
+        ...personnelUpdates,
         updated_at: new Date().toISOString()
       })
       .eq('id', userId)
       .select()
       .single()
 
+    console.log('Personnel update result:', { updatedPersonnel, updateError })
+
     if (updateError) {
+      console.error('Error updating personnel:', updateError)
       return NextResponse.json(
-        { error: updateError.message },
-        { status: 400 }
+        { error: `Failed to update personnel: ${updateError.message}` },
+        { status: 500 }
       )
     }
 
-    // If assignment changed, create assignment history record
+    // If assignment changed, add to assignment history
     if (assignmentChanged) {
-      // Require reassignment reason when changing assignment
-      if (!updates.reassignment_reason || updates.reassignment_reason.trim() === '') {
-        return NextResponse.json(
-          { error: 'Reassignment reason is required when changing unit assignment' },
-          { status: 400 }
-        )
-      }
-
-      const { error: historyError } = await supabaseAdmin
+      await supabaseAdmin
         .from('personnel_assignment_history')
         .insert({
           personnel_id: userId,
           previous_unit: currentPersonnel.unit,
           previous_sub_unit: currentPersonnel.sub_unit,
           previous_province: currentPersonnel.province,
-          new_unit: updates.unit,
-          new_sub_unit: updates.sub_unit,
-          new_province: updates.province,
-          assigned_by: tokenUser.user.id,
-          reason: updates.reassignment_reason.trim(),
-          notes: updates.reassignment_notes?.trim() || null
+          new_unit: personnelUpdates.unit || currentPersonnel.unit,
+          new_sub_unit: personnelUpdates.sub_unit || currentPersonnel.sub_unit,
+          new_province: personnelUpdates.province || currentPersonnel.province,
+          changed_by: tokenUser.user.id,
+          reason: reassignment_reason || 'Administrative update'
         })
-
-      if (historyError) {
-        console.error('Error creating assignment history:', historyError)
-        return NextResponse.json(
-          { error: 'Failed to create assignment history record' },
-          { status: 500 }
-        )
-      }
     }
+
+    // Log the update in audit_logs
+    await supabaseAdmin
+      .from('audit_logs')
+      .insert({
+        action: 'UPDATE_PERSONNEL',
+        user_id: tokenUser.user.id,
+        details: {
+          personnel_id: userId,
+          personnel_email: updatedPersonnel.email,
+          changes: personnelUpdates,
+          assignment_changed: assignmentChanged
+        }
+      })
 
     return NextResponse.json({
       message: 'Personnel updated successfully',
       personnel: updatedPersonnel,
-      assignmentChanged
+      assignment_changed: assignmentChanged
     })
 
   } catch (error) {
@@ -156,17 +161,17 @@ export async function PUT(request: NextRequest) {
 // Get assignment history for a personnel
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
+    const searchParams = request.nextUrl.searchParams
     const personnelId = searchParams.get('personnelId')
 
     if (!personnelId) {
       return NextResponse.json(
-        { error: 'Personnel ID is required' },
+        { error: 'Missing personnelId parameter' },
         { status: 400 }
       )
     }
 
-    // Verify authentication
+    // SECURITY: Verify the requesting user is authorized
     const authHeader = request.headers.get('authorization')
     if (!authHeader) {
       return NextResponse.json(
@@ -175,6 +180,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Extract token and verify with Supabase
     const token = authHeader.replace('Bearer ', '')
     const { data: tokenUser, error: tokenError } = await supabaseAdmin.auth.getUser(token)
     
@@ -185,66 +191,44 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Optimized: Single query with JOIN using the correct foreign key relationship
+    // Verify the user is an active admin
+    const { data: adminCheck, error: adminError } = await supabaseAdmin
+      .from('admin_accounts')
+      .select('role, is_active')
+      .eq('id', tokenUser.user.id)
+      .eq('is_active', true)
+      .single()
+
+    if (adminError || !adminCheck) {
+      return NextResponse.json(
+        { error: 'Forbidden - Insufficient privileges' },
+        { status: 403 }
+      )
+    }
+
+    // Get assignment history
+    console.log('Fetching assignment history for personnel:', personnelId)
+    
     const { data: history, error: historyError } = await supabaseAdmin
       .from('personnel_assignment_history')
       .select(`
         *,
-        assigned_by_admin:admin_accounts!personnel_assignment_history_assigned_by_admin_fkey(
-          full_name,
-          rank
-        )
+        changed_by_admin:admin_accounts(full_name, rank)
       `)
       .eq('personnel_id', personnelId)
-      .order('assignment_date', { ascending: false })
+      .order('changed_at', { ascending: false })
+
+    console.log('Assignment history query result:', { history, historyError })
 
     if (historyError) {
-      console.error('Assignment history query error:', historyError)
-      
-      // Fallback to the old method if JOIN fails
-      console.log('Falling back to separate queries...')
-      const { data: basicHistory, error: basicError } = await supabaseAdmin
-        .from('personnel_assignment_history')
-        .select('*')
-        .eq('personnel_id', personnelId)
-        .order('assignment_date', { ascending: false })
-
-      if (basicError) {
-        return NextResponse.json(
-          { error: basicError.message },
-          { status: 400 }
-        )
-      }
-
-      // Get admin details in a single batch query
-      const adminIds = [...new Set(basicHistory?.map(h => h.assigned_by).filter(Boolean) || [])]
-      let adminDetails: Record<string, { full_name: string; rank: string }> = {}
-      
-      if (adminIds.length > 0) {
-        const { data: admins } = await supabaseAdmin
-          .from('admin_accounts')
-          .select('id, full_name, rank')
-          .in('id', adminIds)
-        
-        adminDetails = (admins || []).reduce((acc: Record<string, { full_name: string; rank: string }>, admin: { id: string; full_name: string; rank: string }) => {
-          acc[admin.id] = { full_name: admin.full_name, rank: admin.rank }
-          return acc
-        }, {})
-      }
-
-      const historyWithAdmins = (basicHistory || []).map(record => ({
-        ...record,
-        assigned_by_admin: record.assigned_by ? adminDetails[record.assigned_by] || null : null
-      }))
-
-      return NextResponse.json({
-        history: historyWithAdmins
-      })
+      console.error('Error fetching assignment history:', historyError)
+      return NextResponse.json(
+        { error: 'Failed to fetch assignment history' },
+        { status: 500 }
+      )
     }
 
-    return NextResponse.json({
-      history: history || []
-    })
+    return NextResponse.json({ history })
 
   } catch (error) {
     console.error('Error fetching assignment history:', error)

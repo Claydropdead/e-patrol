@@ -49,7 +49,6 @@ export type Database = {
           full_name: string
           email: string
           contact_number: string | null
-          region: string
           province: string
           unit: string
           sub_unit: string
@@ -63,7 +62,6 @@ export type Database = {
           full_name: string
           email: string
           contact_number?: string | null
-          region?: string
           province: string
           unit: string
           sub_unit: string
@@ -77,13 +75,53 @@ export type Database = {
           full_name?: string
           email?: string
           contact_number?: string | null
-          region?: string
           province?: string
           unit?: string
           sub_unit?: string
           is_active?: boolean
           created_at?: string
           updated_at?: string
+        }
+      }
+      personnel_assignment_history: {
+        Row: {
+          id: string
+          personnel_id: string
+          previous_unit: string | null
+          previous_sub_unit: string | null
+          previous_province: string | null
+          new_unit: string | null
+          new_sub_unit: string | null
+          new_province: string | null
+          changed_by: string | null
+          changed_at: string
+          reason: string | null
+        }
+        Insert: {
+          id?: string
+          personnel_id: string
+          previous_unit?: string | null
+          previous_sub_unit?: string | null
+          previous_province?: string | null
+          new_unit?: string | null
+          new_sub_unit?: string | null
+          new_province?: string | null
+          changed_by?: string | null
+          changed_at?: string
+          reason?: string | null
+        }
+        Update: {
+          id?: string
+          personnel_id?: string
+          previous_unit?: string | null
+          previous_sub_unit?: string | null
+          previous_province?: string | null
+          new_unit?: string | null
+          new_sub_unit?: string | null
+          new_province?: string | null
+          changed_by?: string | null
+          changed_at?: string
+          reason?: string | null
         }
       }
     }
@@ -101,6 +139,7 @@ export type Database = {
 
 export type AdminAccount = Database['public']['Tables']['admin_accounts']['Row']
 export type Personnel = Database['public']['Tables']['personnel']['Row']
+export type PersonnelAssignmentHistory = Database['public']['Tables']['personnel_assignment_history']['Row']
 export type AdminRole = Database['public']['Enums']['admin_role']
 
 // Personnel status types
