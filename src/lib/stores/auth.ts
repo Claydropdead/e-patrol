@@ -48,12 +48,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       
       // Listen for auth changes - only handle essential events
       supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
-        // Only log SIGNED_OUT events to avoid spam
+        // Only handle sign out events
         if (event === 'SIGNED_OUT') {
-          console.log('Auth state change: SIGNED_OUT')
           set({ user: null, adminAccount: null, personnel: null, userType: null })
         } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-          // Silently update user on token refresh, no logging or profile refetch
+          // Silently update user on token refresh
           set({ user: session.user })
         }
         // Remove SIGNED_IN handling to prevent reload loops when returning to tab
@@ -150,7 +149,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       
       // If neither found, user might not be properly set up
-      console.warn('User not found in admin_accounts or personnel tables:', user.id)
       set({ 
         adminAccount: null, 
         personnel: null, 
@@ -173,7 +171,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // Handle other RLS-related errors
       if (adminError?.code === '42501' || personnelError?.code === '42501') {
         // Permission denied - likely RLS policy issue
-        console.error('RLS Policy Error - User might have inactive profile')
         set({ 
           adminAccount: null, 
           personnel: null, 
@@ -184,16 +181,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       
       // Some other error occurred
-      console.error('Error fetching user profile:', {
-        adminError,
-        personnelError,
-        userEmail: user.email,
-        userId: user.id
-      })
       set({ error: 'Error fetching user profile' })
       
     } catch (error) {
-      console.error('Error in fetchUserProfile:', error)
       set({ error: (error as Error).message })
     }
   },
@@ -212,7 +202,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       return null
     } catch (error) {
-      console.error('Error refreshing session:', error)
       set({ error: 'Session refresh failed' })
       return null
     }
@@ -233,14 +222,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const fiveMinutes = 5 * 60 * 1000
       
       if (expiresAt - now < fiveMinutes) {
-        console.log('Token expires soon, refreshing...')
         const state = get()
         return await state.refreshSession()
       }
       
       return session
     } catch (error) {
-      console.error('Error getting valid session:', error)
       return null
     }
   },

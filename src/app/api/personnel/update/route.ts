@@ -89,7 +89,7 @@ export async function PUT(request: NextRequest) {
     )
 
     // Separate personnel updates from reassignment data
-    const { reassignment_reason, reassignment_notes, ...personnelUpdates } = updates
+    const { reassignment_reason, ...personnelUpdates } = updates
 
     // Update personnel record (excluding reassignment fields)
     const { data: updatedPersonnel, error: updateError } = await supabaseAdmin
@@ -114,7 +114,7 @@ export async function PUT(request: NextRequest) {
 
     // If assignment changed, add to assignment history
     if (assignmentChanged) {
-      await supabaseAdmin
+      const { data: historyData, error: historyError } = await supabaseAdmin
         .from('personnel_assignment_history')
         .insert({
           personnel_id: userId,
@@ -125,9 +125,19 @@ export async function PUT(request: NextRequest) {
           new_sub_unit: personnelUpdates.sub_unit || currentPersonnel.sub_unit,
           new_province: personnelUpdates.province || currentPersonnel.province,
           changed_by: tokenUser.user.id,
-          reason: reassignment_reason || 'Administrative update',
-          notes: reassignment_notes
+          changed_at: new Date().toISOString(),
+          reason: reassignment_reason || 'Administrative update'
+          // Note: removed 'notes' field as it doesn't exist in the table schema
         })
+        .select()
+
+      if (historyError) {
+        console.error('Error inserting assignment history:', historyError)
+        // Continue with the update but warn about history failure
+        console.warn('Personnel updated successfully but assignment history logging failed')
+      } else {
+        console.log('Assignment history recorded:', historyData)
+      }
     }
 
     // Log the update in audit_logs

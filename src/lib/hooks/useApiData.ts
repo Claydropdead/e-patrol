@@ -21,7 +21,6 @@ export function useApiData<T = unknown>({
   const [error, setError] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
-    console.log(`🔄 Fetching ${endpoint}...`)
     setLoading(true)
     setError(null)
 
@@ -35,8 +34,6 @@ export function useApiData<T = unknown>({
       // Build URL with params (no cache busting unless explicitly needed)
       const searchParams = new URLSearchParams(params)
       const url = searchParams.toString() ? `${endpoint}?${searchParams}` : endpoint
-      
-      console.log(`🌐 API call: ${url}`)
 
       const response = await fetch(url, {
         headers: {
@@ -50,7 +47,6 @@ export function useApiData<T = unknown>({
       }
 
       const result = await response.json()
-      console.log(`✅ ${endpoint} data received`)
 
       if (result.error) {
         throw new Error(result.error)
@@ -61,12 +57,10 @@ export function useApiData<T = unknown>({
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'API request failed'
-      console.error(`❌ ${endpoint} error:`, errorMessage)
       setError(errorMessage)
       onError?.(errorMessage)
     } finally {
       setLoading(false)
-      console.log(`🏁 ${endpoint} complete`)
     }
   }, [endpoint]) // Simplified dependencies - removed unstable params and callbacks
 

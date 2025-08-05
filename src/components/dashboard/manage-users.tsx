@@ -92,7 +92,6 @@ export function ManageUsers() {
   } = useApiData<{ adminUsers: AdminUser[]; personnelUsers: PersonnelUser[] }>({
     endpoint: '/api/users',
     params: { type: 'all' }, // Remove reactive params
-    dependencies: [], // Remove reactive dependencies
     onError: (errorMsg) => toast.error(errorMsg as string)
   })
 
@@ -135,7 +134,7 @@ export function ManageUsers() {
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<AdminUser | PersonnelUser | null>(null)
   const [editingUserType, setEditingUserType] = useState<UserType>('admin')
-  const [editForm, setEditForm] = useState<Partial<AdminUser & PersonnelUser & { reassignment_reason?: string; reassignment_notes?: string }>>({})
+  const [editForm, setEditForm] = useState<Partial<AdminUser & PersonnelUser & { reassignment_reason?: string }>>({})
   const [editLoading, setEditLoading] = useState(false)
   
   // Assignment history dialog states
@@ -627,10 +626,9 @@ export function ManageUsers() {
     setEditingUser(user)
     setEditingUserType(userType)
     // Initialize form with user data, ensuring clean state
-    const cleanForm: Partial<AdminUser & PersonnelUser & { reassignment_reason?: string; reassignment_notes?: string }> = { ...user }
+    const cleanForm: Partial<AdminUser & PersonnelUser & { reassignment_reason?: string }> = { ...user }
     // Clear any reassignment fields when opening edit
     cleanForm.reassignment_reason = ''
-    cleanForm.reassignment_notes = ''
     setEditForm(cleanForm)
     setEditDialogOpen(true)
   }
@@ -1051,15 +1049,6 @@ export function ManageUsers() {
                         {(!editForm.reassignment_reason || editForm.reassignment_reason.trim() === '') && (
                           <p className="text-sm text-red-600 mt-1">This field is required for unit reassignments</p>
                         )}
-                      </div>
-                      <div>
-                        <Label htmlFor="reassignment-notes">Additional Notes (Optional)</Label>
-                        <Input
-                          id="reassignment-notes"
-                          value={editForm.reassignment_notes || ''}
-                          onChange={(e) => setEditForm(prev => ({ ...prev, reassignment_notes: e.target.value }))}
-                          placeholder="Any additional details about the reassignment"
-                        />
                       </div>
                     </div>
                   )}
