@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
     // Build optimized query with selective fields
     let query = supabaseAdmin
       .from('audit_logs')
-      .select('changed_at, table_name, operation, new_data, changed_by', { count: 'exact' })
+      .select('id, changed_at, table_name, operation, new_data, changed_by', { count: 'exact' })
       .order('changed_at', { ascending: false })
 
     // Apply filters with indexed columns first for better performance

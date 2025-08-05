@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { RefreshCw, Activity } from 'lucide-react'
 
 interface AuditEntry {
+  id: string
   changed_at: string
   table_name: string
   operation: string
@@ -30,6 +31,10 @@ export function AuditLogsViewer() {
   const [stats, setStats] = useState<AuditStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [realTimeStatus, setRealTimeStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
+  const [usePolling, setUsePolling] = useState(false)
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [filters, setFilters] = useState({
     table: 'all',
     operation: 'all',
@@ -52,8 +57,8 @@ export function AuditLogsViewer() {
     return displayData || 'Data updated'
   }
 
-  const fetchAuditLogs = useCallback(async () => {
-    setLoading(true)
+  const fetchAuditLogs = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true)
     setError(null)
     
     try {
@@ -64,7 +69,9 @@ export function AuditLogsViewer() {
 
       const params = new URLSearchParams({
         page: filters.page.toString(),
-        limit: '25'
+        limit: '25',
+        // Add cache-busting parameter
+        _t: Date.now().toString()
       })
 
       if (filters.table && filters.table !== 'all') params.append('table', filters.table)
@@ -74,6 +81,9 @@ export function AuditLogsViewer() {
       const response = await fetch(`/api/audit?${params}`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
         }
       })
 
@@ -95,20 +105,23 @@ export function AuditLogsViewer() {
       setError(errorMessage)
       toast.error(errorMessage)
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
-  }, [filters])
+  }, [filters.page, filters.table, filters.operation, filters.userId])
 
   const fetchStats = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) return
 
-      const response = await fetch('/api/audit', {
+      const response = await fetch(`/api/audit?_t=${Date.now()}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
         },
         body: JSON.stringify({ action: 'stats' })
       })
@@ -137,16 +150,174 @@ export function AuditLogsViewer() {
     )
   }
 
-  const handleRefresh = () => {
-    fetchAuditLogs()
-    fetchStats()
+  const loadAuditData = useCallback(async (showLoading = true) => {
+    await Promise.all([
+      fetchAuditLogs(showLoading),
+      fetchStats()
+    ])
+  }, [fetchAuditLogs, fetchStats])
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await loadAuditData(false)
+      toast.success('Audit logs refreshed')
+    } catch (error) {
+      toast.error('Failed to refresh audit logs')
+    } finally {
+      setRefreshing(false)
+    }
   }
 
-  // Load data when component mounts and when filters change
+  // Load data when component mounts
   useEffect(() => {
-    fetchAuditLogs()
-    fetchStats()
-  }, [fetchAuditLogs, fetchStats])
+    loadAuditData(true)
+  }, []) // Remove function dependencies to prevent infinite loop
+
+  // Separate effect for filter changes
+  useEffect(() => {
+    fetchAuditLogs(true)
+  }, [fetchAuditLogs])
+
+  // Real-time subscription for audit logs
+  useEffect(() => {
+    let channel: any = null;
+    
+    const setupRealTime = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          console.log('No session available for real-time subscription')
+          setRealTimeStatus('disconnected')
+          setUsePolling(true) // Use polling instead
+          return
+        }
+
+        // For now, skip real-time and use polling due to schema issues
+        console.log('Skipping real-time due to schema binding issues, using polling instead')
+        setRealTimeStatus('disconnected')
+        setUsePolling(true)
+        return
+
+        // TODO: Re-enable when real-time is properly configured
+        /* 
+        // Test if we can query the audit_logs table first
+        console.log('Testing audit_logs table access...')
+        const { data: testQuery, error: testError } = await supabase
+          .from('audit_logs')
+          .select('id')
+          .limit(1)
+          .maybeSingle()
+
+        if (testError) {
+          console.error('Cannot access audit_logs table:', testError)
+          setRealTimeStatus('disconnected')
+          setUsePolling(true)
+          return
+        }
+
+        console.log('audit_logs table accessible, setting up real-time...')
+
+        // Check if real-time is available by testing the connection
+        channel = supabase
+          .channel(`audit-logs-realtime-${Date.now()}`) // Unique channel name
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT', // Only listen to INSERT events initially
+              schema: 'public',
+              table: 'audit_logs',
+              filter: undefined // Remove any filters to avoid binding issues
+            },
+            (payload) => {
+              console.log('Real-time audit log insert:', payload)
+              
+              try {
+                if (payload.eventType === 'INSERT' && payload.new) {
+                  // Validate the payload structure before using it
+                  const newEntry = payload.new as any
+                  if (newEntry.id && newEntry.changed_at && newEntry.table_name && newEntry.operation) {
+                    // Add new audit log to the beginning of the list
+                    setAuditLogs(prevLogs => [newEntry as AuditEntry, ...prevLogs])
+                    
+                    // Update stats
+                    fetchStats()
+                    
+                    // Show notification for new audit entry
+                    toast.info(`New ${newEntry.operation}: ${newEntry.table_name}`)
+                  } else {
+                    console.warn('Invalid audit log payload structure:', newEntry)
+                  }
+                }
+              } catch (payloadError) {
+                console.error('Error processing real-time payload:', payloadError)
+              }
+            }
+          )
+          .subscribe((status, err) => {
+            console.log('Real-time subscription status:', status)
+            if (err) {
+              console.error('Real-time subscription error:', err)
+            }
+            
+            if (status === 'SUBSCRIBED') {
+              console.log('Successfully subscribed to audit logs real-time updates')
+              setRealTimeStatus('connected')
+            } else if (status === 'CHANNEL_ERROR') {
+              console.error('Error subscribing to audit logs real-time updates')
+              setRealTimeStatus('disconnected')
+              setUsePolling(true) // Enable polling fallback
+              // Real-time not available, but that's ok - manual refresh still works
+              toast.warning('Real-time updates unavailable. Using periodic refresh instead.')
+            } else if (status === 'TIMED_OUT') {
+              console.error('Real-time subscription timed out')
+              setRealTimeStatus('disconnected')
+              setUsePolling(true) // Enable polling fallback
+            } else if (status === 'CLOSED') {
+              console.log('Real-time subscription closed')
+              setRealTimeStatus('disconnected')
+            }
+          })
+        */
+      } catch (error) {
+        console.error('Failed to setup real-time subscription:', error)
+        setRealTimeStatus('disconnected')
+        setUsePolling(true) // Enable polling fallback
+        // Don't show error toast - real-time is optional, manual refresh still works
+        console.log('Real-time updates not available, falling back to periodic refresh')
+      }
+    }
+
+    setupRealTime()
+
+    // Cleanup subscription on component unmount
+    return () => {
+      if (channel) {
+        console.log('Unsubscribing from audit logs real-time updates')
+        try {
+          supabase.removeChannel(channel)
+        } catch (cleanupError) {
+          console.error('Error cleaning up real-time subscription:', cleanupError)
+        }
+      }
+    }
+  }, []) // Empty dependency array - only run once
+
+  // Auto-refresh polling when real-time is not available
+  useEffect(() => {
+    if (!usePolling || !autoRefresh) return
+
+    console.log('Starting auto-refresh polling for audit logs (30 seconds)')
+    const pollInterval = setInterval(() => {
+      console.log('Auto-refreshing audit logs...')
+      loadAuditData(false) // Don't show loading spinner for auto-refresh
+    }, 30000) // Poll every 30 seconds
+
+    return () => {
+      console.log('Stopping auto-refresh polling')
+      clearInterval(pollInterval)
+    }
+  }, [usePolling, autoRefresh, loadAuditData])
 
   const handleFilterChange = (key: string, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value, page: 1 }))
@@ -173,15 +344,25 @@ export function AuditLogsViewer() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold">Audit Logs</h2>
-          <Button onClick={handleRefresh} variant="outline">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
+          <Button 
+            onClick={handleRefresh} 
+            variant="outline"
+            disabled={refreshing}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Retrying...' : 'Retry'}
           </Button>
         </div>
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <p className="text-red-800">Error: {error}</p>
-          <Button onClick={handleRefresh} className="mt-2" variant="outline" size="sm">
-            Try Again
+          <Button 
+            onClick={handleRefresh} 
+            className="mt-2" 
+            variant="outline" 
+            size="sm"
+            disabled={refreshing}
+          >
+            {refreshing ? 'Retrying...' : 'Try Again'}
           </Button>
         </div>
       </div>
@@ -190,12 +371,51 @@ export function AuditLogsViewer() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Audit Logs</h2>
-        <Button onClick={handleRefresh} variant="outline">
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+      <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+        <div className="flex items-center space-x-4">
+          <h2 className="text-2xl font-bold">Audit Logs</h2>
+          {/* Real-time status indicator */}
+          <div className="flex items-center space-x-2">
+            <div className={`w-2 h-2 rounded-full ${
+              realTimeStatus === 'connected' ? 'bg-green-500' : 
+              realTimeStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 
+              usePolling && autoRefresh ? 'bg-blue-500 animate-pulse' :
+              'bg-red-500'
+            }`}></div>
+            <span className="text-sm text-gray-600">
+              {realTimeStatus === 'connected' ? 'Live' : 
+               realTimeStatus === 'connecting' ? 'Connecting...' : 
+               usePolling && autoRefresh ? 'Auto-refresh (30s)' :
+               usePolling ? 'Auto-refresh off' :
+               'Manual only'}
+            </span>
+          </div>
+        </div>
+        
+        <div className="flex items-center space-x-3">
+          {/* Auto-refresh toggle */}
+          {usePolling && (
+            <Button
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              variant={autoRefresh ? "default" : "outline"}
+              size="sm"
+            >
+              <Activity className={`h-4 w-4 mr-2 ${autoRefresh ? 'animate-pulse' : ''}`} />
+              Auto-refresh {autoRefresh ? 'ON' : 'OFF'}
+            </Button>
+          )}
+          
+          {/* Manual refresh button */}
+          <Button 
+            onClick={handleRefresh} 
+            variant="outline" 
+            size="sm"
+            disabled={refreshing}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}

@@ -555,20 +555,23 @@ export function LiveMonitoring() {
 
   // Filter personnel based on current filters
   const filteredPersonnel = personnel.filter(person => {
+    // Ensure person has required fields
+    if (!person || !person.id || !person.full_name) return false
+    
     const matchesStatus = statusFilter === 'all' || person.status === statusFilter
     const matchesUnit = unitFilter === 'all' || person.unit === unitFilter
     const matchesSubUnit = subUnitFilter === 'all' || person.sub_unit === subUnitFilter
-    const matchesSearch = person.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         person.rank.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         person.unit.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         person.sub_unit.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesSearch = (person.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (person.rank || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (person.unit || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (person.sub_unit || '').toLowerCase().includes(searchTerm.toLowerCase())
     
     return matchesStatus && matchesUnit && matchesSubUnit && matchesSearch
   })
 
   // Get unique units and subunits
-  const units = [...new Set(personnel.map(p => p.unit))]
-  const subUnits = [...new Set(personnel.map(p => p.sub_unit))]
+  const units = [...new Set(personnel.map(p => p.unit).filter(Boolean))]
+  const subUnits = [...new Set(personnel.map(p => p.sub_unit).filter(Boolean))]
 
   // Get all available units (no province filtering)
   const availableUnits = units
@@ -576,7 +579,7 @@ export function LiveMonitoring() {
   // Get sub-units filtered by selected unit only
   const availableSubUnits = unitFilter === 'all' 
     ? subUnits 
-    : [...new Set(personnel.filter(p => p.unit === unitFilter).map(p => p.sub_unit))]
+    : [...new Set(personnel.filter(p => p.unit === unitFilter).map(p => p.sub_unit).filter(Boolean))]
 
   // Status styling helper
   const getStatusConfig = (status: string) => {
@@ -824,9 +827,9 @@ export function LiveMonitoring() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Units</SelectItem>
-                      {availableUnits.map(unit => (
-                        <SelectItem key={unit} value={unit}>
-                          {unit.replace(' PS', '').replace(' CPO', '')}
+                      {availableUnits.map((unit, index) => (
+                        <SelectItem key={unit || `unit-${index}`} value={unit || ''}>
+                          {unit ? unit.replace(' PS', '').replace(' CPO', '') : 'Unknown Unit'}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -839,9 +842,9 @@ export function LiveMonitoring() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Sub-Units</SelectItem>
-                      {availableSubUnits.map(subUnit => (
-                        <SelectItem key={subUnit} value={subUnit}>
-                          {subUnit}
+                      {availableSubUnits.map((subUnit, index) => (
+                        <SelectItem key={subUnit || `subunit-${index}`} value={subUnit || ''}>
+                          {subUnit || 'Unknown Sub-Unit'}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -908,13 +911,13 @@ export function LiveMonitoring() {
                   </div>
                 ) : (
                   <div className="space-y-2 p-4">
-                    {filteredPersonnel.map(person => {
+                    {filteredPersonnel.map((person, index) => {
                       const statusConfig = getStatusConfig(person.status)
                       const StatusIcon = statusConfig.icon
                       
                       return (
                         <div
-                          key={person.id}
+                          key={person.id || `person-${index}`}
                           className={`p-3 rounded-lg border ${statusConfig.bgColor} ${statusConfig.borderColor} hover:shadow-sm transition-shadow cursor-pointer`}
                         >
                           <div className="flex items-center justify-between">

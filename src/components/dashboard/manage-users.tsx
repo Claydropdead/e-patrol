@@ -103,21 +103,41 @@ export function ManageUsers() {
   // Simple cache for assignment history to avoid repeated API calls
   const [historyCache, setHistoryCache] = useState<Record<string, AssignmentHistory[]>>({})
 
+  // Auto refresh state
+  const [autoRefresh, setAutoRefresh] = useState(false)
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
+
   // Use singleton supabase instance
 
-  const loadUsers = useCallback(async () => {
-    setLoading(true)
+  const loadUsers = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true)
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        toast.error('Authentication required')
+        return
+      }
+
       const searchParams = new URLSearchParams({
         type: 'all',
         search: searchTerm,
         role: 'all', // Use 'all' since filterRole is removed
-        status: filterStatus
+        status: filterStatus,
+        // Add timestamp to prevent caching and ensure fresh data
+        _t: Date.now().toString()
       })
 
-      const response = await fetch(`/api/users?${searchParams}`)
+      const response = await fetch(`/api/users?${searchParams}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      })
       if (!response.ok) {
-        throw new Error('Failed to fetch users')
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errorData.error || 'Failed to fetch users')
       }
 
       const data = await response.json()
@@ -129,11 +149,14 @@ export function ManageUsers() {
         setPersonnelUsers(data.personnelUsers)
       }
     } catch (error) {
-      toast.error('Failed to load users')
-      console.error('Error loading users:', error)
+      if (showLoading) {
+        toast.error(error instanceof Error ? error.message : 'Failed to load users')
+        console.error('Error loading users:', error)
+      }
       
-      // Fallback to mock data for development
-      const mockAdminUsers: AdminUser[] = [
+      // Only show fallback in development and when showing loading
+      if (showLoading && process.env.NODE_ENV === 'development') {
+        const mockAdminUsers: AdminUser[] = [
         {
           id: '1',
           rank: 'Police Colonel',
@@ -197,22 +220,44 @@ export function ManageUsers() {
         }
       ]
 
-      setAdminUsers(mockAdminUsers)
-      setPersonnelUsers(mockPersonnelUsers)
+        setAdminUsers(mockAdminUsers)
+        setPersonnelUsers(mockPersonnelUsers)
+      }
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
   }, [searchTerm, filterStatus]) // Dependencies for useCallback
 
   // Load users from API
   useEffect(() => {
     loadUsers()
+    setLastRefresh(new Date())
+  }, [loadUsers])
+
+  // Auto-refresh every 30 seconds when enabled
+  useEffect(() => {
+    if (!autoRefresh) return
+
+    const interval = setInterval(() => {
+      loadUsers(false) // Silent refresh without loading state
+      setLastRefresh(new Date())
+    }, 30000) // 30 seconds
+
+    return () => clearInterval(interval)
+  }, [autoRefresh, loadUsers])
+
+  // Manual refresh function for button click
+  const handleManualRefresh = useCallback(() => {
+    loadUsers(true)
+    setLastRefresh(new Date())
+    toast.success('Users data refreshed')
   }, [loadUsers])
 
   // Reload users when filters change
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       loadUsers()
+      setLastRefresh(new Date())
     }, 500) // Debounce search
 
     return () => clearTimeout(timeoutId)
@@ -566,10 +611,18 @@ export function ManageUsers() {
 
   const handleToggleUserStatus = async (userId: string, userType: UserType) => {
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        toast.error('Authentication required')
+        return
+      }
+
       const response = await fetch('/api/users', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
           userId,
@@ -594,6 +647,9 @@ export function ManageUsers() {
       }
       
       toast.success('User status updated successfully')
+      
+      // Refresh data to ensure consistency
+      setTimeout(() => loadUsers(false), 1000)
     } catch (error) {
       toast.error('Failed to update user status')
       console.error('Error updating user status:', error)
@@ -638,13 +694,24 @@ export function ManageUsers() {
     }
 
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        toast.error('Authentication required')
+        return
+      }
+
       const force = !user.is_active // Force permanent deletion for inactive users
       const response = await fetch(`/api/users?id=${userId}&type=${userType}&force=${force}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
       })
 
       if (!response.ok) {
-        throw new Error('Failed to delete user')
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errorData.error || 'Failed to delete user')
       }
 
       const result = await response.json()
@@ -672,8 +739,12 @@ export function ManageUsers() {
         toast.success(`${user.full_name} has been deactivated`)
       }
       
+      // Refresh data to ensure consistency
+      setTimeout(() => loadUsers(false), 1000)
+      
     } catch (error) {
-      toast.error('Failed to delete user')
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete user'
+      toast.error(errorMessage)
       console.error('Error deleting user:', error)
     }
   }
@@ -751,7 +822,18 @@ export function ManageUsers() {
 
       if (result.assignmentChanged) {
         toast.info('Assignment change recorded in history')
+        // Clear assignment history cache for this user if it was personnel
+        if (editingUserType === 'personnel' && editingUser?.id) {
+          setHistoryCache(prev => {
+            const newCache = { ...prev }
+            delete newCache[editingUser.id]
+            return newCache
+          })
+        }
       }
+
+      // Refresh data to ensure consistency
+      setTimeout(() => loadUsers(false), 1000)
 
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to update user')
@@ -761,12 +843,12 @@ export function ManageUsers() {
     }
   }
 
-  const handleViewAssignmentHistory = async (personnelId: string) => {
+  const handleViewAssignmentHistory = async (personnelId: string, forceRefresh = false) => {
     setCurrentPersonnelId(personnelId)
     setHistoryDialogOpen(true)
     
-    // Check cache first
-    if (historyCache[personnelId]) {
+    // Check cache first unless forcing refresh
+    if (!forceRefresh && historyCache[personnelId]) {
       setAssignmentHistory(historyCache[personnelId])
       return
     }
@@ -785,9 +867,16 @@ export function ManageUsers() {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
 
-      const response = await fetch(`/api/personnel/update?personnelId=${personnelId}`, {
+      // Add timestamp to prevent caching and ensure fresh data
+      const url = new URL(`/api/personnel/update`, window.location.origin)
+      url.searchParams.set('personnelId', personnelId)
+      url.searchParams.set('_t', Date.now().toString()) // Cache buster
+
+      const response = await fetch(url.toString(), {
         headers: {
-          'Authorization': `Bearer ${session.access_token}`
+          'Authorization': `Bearer ${session.access_token}`,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
         },
         signal: controller.signal
       })
@@ -798,7 +887,8 @@ export function ManageUsers() {
         if (response.status === 404) {
           throw new Error('Personnel not found')
         }
-        throw new Error(`Failed to fetch assignment history (${response.status})`)
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(errorData.error || `Failed to fetch assignment history (${response.status})`)
       }
 
       const result = await response.json()
@@ -813,20 +903,20 @@ export function ManageUsers() {
       
       setAssignmentHistory(filteredHistory)
       
-      // Cache the results for 5 minutes
+      // Cache the results for 2 minutes (shorter for live data)
       setHistoryCache(prev => ({
         ...prev,
         [personnelId]: filteredHistory
       }))
       
-      // Clear cache after 5 minutes
+      // Clear cache after 2 minutes
       setTimeout(() => {
         setHistoryCache(prev => {
           const newCache = { ...prev }
           delete newCache[personnelId]
           return newCache
         })
-      }, 5 * 60 * 1000)
+      }, 2 * 60 * 1000)
 
       // Show success message if no records found
       if (filteredHistory.length === 0) {
@@ -857,11 +947,27 @@ export function ManageUsers() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Manage Users</h1>
           <p className="text-gray-600 mt-1">View and manage all admin accounts and personnel</p>
+          <div className="flex items-center space-x-4 mt-2">
+            <p className="text-sm text-gray-500">
+              Last updated: {lastRefresh.toLocaleTimeString()}
+            </p>
+            <label className="flex items-center space-x-2 text-sm">
+              <input
+                type="checkbox"
+                checked={autoRefresh}
+                onChange={(e) => setAutoRefresh(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-gray-600">Auto-refresh (30s)</span>
+            </label>
+          </div>
         </div>
-        <Button onClick={loadUsers} variant="outline" className="flex items-center space-x-2">
-          <RefreshCw className="h-4 w-4" />
-          <span>Refresh</span>
-        </Button>
+        <div className="flex items-center space-x-2">
+          <Button onClick={handleManualRefresh} variant="outline" className="flex items-center space-x-2">
+            <RefreshCw className="h-4 w-4" />
+            <span>Refresh Now</span>
+          </Button>
+        </div>
       </div>
 
       {/* Search and Filters */}
@@ -1154,13 +1260,8 @@ export function ManageUsers() {
                 size="sm"
                 onClick={() => {
                   if (currentPersonnelId) {
-                    // Clear cache and reload
-                    setHistoryCache(prev => {
-                      const newCache = { ...prev }
-                      delete newCache[currentPersonnelId]
-                      return newCache
-                    })
-                    handleViewAssignmentHistory(currentPersonnelId)
+                    // Force refresh to get latest data
+                    handleViewAssignmentHistory(currentPersonnelId, true)
                   }
                 }}
                 className="flex items-center space-x-1"

@@ -42,6 +42,48 @@ const supabaseAdmin = createClient(
 
 export async function GET(request: NextRequest) {
   try {
+    // SECURITY: Verify the requesting user is authorized
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: 'Unauthorized - No authentication token' },
+        { status: 401 }
+      )
+    }
+
+    // Extract token and verify with Supabase
+    const token = authHeader.replace('Bearer ', '')
+    const { data: tokenUser, error: tokenError } = await supabaseAdmin.auth.getUser(token)
+    
+    if (tokenError || !tokenUser?.user) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Invalid token' },
+        { status: 401 }
+      )
+    }
+
+    // Verify user role permissions (allow superadmin, regional, provincial, station)
+    const { data: userAccount, error: roleError } = await supabaseAdmin
+      .from('admin_accounts')
+      .select('role')
+      .eq('id', tokenUser.user.id)
+      .single()
+
+    if (roleError || !userAccount) {
+      return NextResponse.json(
+        { error: 'Unauthorized - User account not found' },
+        { status: 401 }
+      )
+    }
+
+    // Only superadmin can view users
+    if (userAccount.role !== 'superadmin') {
+      return NextResponse.json(
+        { error: 'Forbidden - Only superadmin can access user management' },
+        { status: 403 }
+      )
+    }
+
     // Get query parameters
     const searchParams = request.nextUrl.searchParams
     const userType = searchParams.get('type') || 'all' // 'admin', 'personnel', or 'all'
@@ -134,6 +176,48 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
+    // SECURITY: Verify the requesting user is authorized
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: 'Unauthorized - No authentication token' },
+        { status: 401 }
+      )
+    }
+
+    // Extract token and verify with Supabase
+    const token = authHeader.replace('Bearer ', '')
+    const { data: tokenUser, error: tokenError } = await supabaseAdmin.auth.getUser(token)
+    
+    if (tokenError || !tokenUser?.user) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Invalid token' },
+        { status: 401 }
+      )
+    }
+
+    // Verify user role permissions
+    const { data: userAccount, error: roleError } = await supabaseAdmin
+      .from('admin_accounts')
+      .select('role')
+      .eq('id', tokenUser.user.id)
+      .single()
+
+    if (roleError || !userAccount) {
+      return NextResponse.json(
+        { error: 'Unauthorized - User account not found' },
+        { status: 401 }
+      )
+    }
+
+    // Only superadmin can update users
+    if (userAccount.role !== 'superadmin') {
+      return NextResponse.json(
+        { error: 'Forbidden - Only superadmin can modify users' },
+        { status: 403 }
+      )
+    }
+
     const body = await request.json()
     
     const { userId, userType, action, data } = body
@@ -164,12 +248,18 @@ export async function PUT(request: NextRequest) {
           )
         }
 
+        const updateData: any = { 
+          is_active: !currentUser.is_active
+        }
+        
+        // Only add updated_at for admin_accounts table (personnel table might not have this column)
+        if (tableName === 'admin_accounts') {
+          updateData.updated_at = new Date().toISOString()
+        }
+
         const { data: updatedUser, error: updateError } = await supabaseAdmin
           .from(tableName)
-          .update({ 
-            is_active: !currentUser.is_active,
-            updated_at: new Date().toISOString()
-          })
+          .update(updateData)
           .eq('id', userId)
           .select()
           .single()
@@ -186,12 +276,16 @@ export async function PUT(request: NextRequest) {
 
       case 'update':
         // Update user data
+        const updatePayload: any = { ...data }
+        
+        // Only add updated_at for admin_accounts table (personnel table might not have this column)
+        if (tableName === 'admin_accounts') {
+          updatePayload.updated_at = new Date().toISOString()
+        }
+
         const { error: updateDataError } = await supabaseAdmin
           .from(tableName)
-          .update({ 
-            ...data,
-            updated_at: new Date().toISOString()
-          })
+          .update(updatePayload)
           .eq('id', userId)
 
         if (updateDataError) {
@@ -224,6 +318,48 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    // SECURITY: Verify the requesting user is authorized
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: 'Unauthorized - No authentication token' },
+        { status: 401 }
+      )
+    }
+
+    // Extract token and verify with Supabase
+    const token = authHeader.replace('Bearer ', '')
+    const { data: tokenUser, error: tokenError } = await supabaseAdmin.auth.getUser(token)
+    
+    if (tokenError || !tokenUser?.user) {
+      return NextResponse.json(
+        { error: 'Unauthorized - Invalid token' },
+        { status: 401 }
+      )
+    }
+
+    // Verify user role permissions
+    const { data: userAccount, error: roleError } = await supabaseAdmin
+      .from('admin_accounts')
+      .select('role')
+      .eq('id', tokenUser.user.id)
+      .single()
+
+    if (roleError || !userAccount) {
+      return NextResponse.json(
+        { error: 'Unauthorized - User account not found' },
+        { status: 401 }
+      )
+    }
+
+    // Only superadmin can delete users
+    if (userAccount.role !== 'superadmin') {
+      return NextResponse.json(
+        { error: 'Forbidden - Insufficient permissions' },
+        { status: 403 }
+      )
+    }
+
     const searchParams = request.nextUrl.searchParams
     const userId = searchParams.get('id')
     const userType = searchParams.get('type')
@@ -278,12 +414,18 @@ export async function DELETE(request: NextRequest) {
       }
     } else if (currentUser.is_active) {
       // Soft delete - deactivate active user
+      const updateData: any = { 
+        is_active: false
+      }
+      
+      // Only add updated_at for admin_accounts table (personnel table might not have this column)
+      if (tableName === 'admin_accounts') {
+        updateData.updated_at = new Date().toISOString()
+      }
+
       const { error: updateError } = await supabaseAdmin
         .from(tableName)
-        .update({ 
-          is_active: false,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', userId)
 
       if (updateError) {

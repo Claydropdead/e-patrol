@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { RefreshCw, Activity } from 'lucide-react'
 
 interface AuditEntry {
+  id: string
   changed_at: string
   table_name: string
   operation: string
