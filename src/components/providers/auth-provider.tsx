@@ -22,7 +22,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
     }, 30 * 60 * 1000) // 30 minutes
 
-    return () => clearInterval(tokenRefreshInterval)
+    // Add visibility change listener to refresh session when user returns to tab
+    const handleVisibilityChange = async () => {
+      if (!document.hidden) {
+        // User returned to tab, silently refresh session if needed
+        try {
+          await useAuthStore.getState().getValidSession()
+        } catch (error) {
+          console.error('Session refresh on tab focus failed:', error)
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      clearInterval(tokenRefreshInterval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [initialize])
 
   return <>{children}</>

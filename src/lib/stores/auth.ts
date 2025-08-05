@@ -42,31 +42,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (session?.user) {
         set({ user: session.user })
         await get().fetchUserProfile()
-        // Trigger initial data refresh when session is first established
+        // Set initial session timestamp without triggering refresh
         set({ sessionRefreshed: Date.now() })
       }
       
-      // Listen for auth changes
+      // Listen for auth changes - only handle essential events
       supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
-        console.log('Auth state change:', event, session?.user?.id)
-        
+        // Only log SIGNED_OUT events to avoid spam
         if (event === 'SIGNED_OUT') {
+          console.log('Auth state change: SIGNED_OUT')
           set({ user: null, adminAccount: null, personnel: null, userType: null })
         } else if (event === 'TOKEN_REFRESHED' && session?.user) {
-          console.log('Token refreshed, updating user profile')
-          set({ 
-            user: session.user,
-            sessionRefreshed: Date.now() // Update refresh timestamp
-          })
-          await get().fetchUserProfile()
-        } else if (session?.user) {
+          // Silently update user on token refresh, no logging or profile refetch
           set({ user: session.user })
-          await get().fetchUserProfile()
-          // Trigger data refresh when session changes
-          set({ sessionRefreshed: Date.now() })
-        } else {
-          set({ user: null, adminAccount: null, personnel: null, userType: null })
         }
+        // Remove SIGNED_IN handling to prevent reload loops when returning to tab
+        // Initial auth is handled by getSession() call above
       })
       
       set({ loading: false })

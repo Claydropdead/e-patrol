@@ -28,8 +28,8 @@ import {
   X
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { supabase } from '@/lib/supabase/client'
 import { useAuthStore } from '@/lib/stores/auth'
+import { useApiData } from '@/lib/hooks/useApiData'
 import { MIMAROPA_STRUCTURE } from '@/lib/constants/mimaropa'
 import type { AdminRole } from '@/lib/types/database'
 
@@ -81,11 +81,55 @@ type UserType = 'admin' | 'personnel'
 
 export function ManageUsers() {
   const [activeTab, setActiveTab] = useState<UserType>('admin')
-  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
-  const [personnelUsers, setPersonnelUsers] = useState<PersonnelUser[]>([])
-  const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  
+  // Use stable API hook without reactive dependencies
+  const {
+    data: usersData,
+    loading,
+    refresh
+  } = useApiData<{ adminUsers: AdminUser[]; personnelUsers: PersonnelUser[] }>({
+    endpoint: '/api/users',
+    params: { type: 'all' }, // Remove reactive params
+    dependencies: [], // Remove reactive dependencies
+    onError: (errorMsg) => toast.error(errorMsg as string)
+  })
+
+  // Extract and filter users from API response locally
+  const allAdminUsers = usersData?.adminUsers || []
+  const allPersonnelUsers = usersData?.personnelUsers || []
+  
+  // Filter users locally instead of via API
+  const adminUsers = allAdminUsers.filter(user => {
+    const matchesSearch = !searchTerm || 
+      user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.rank.toLowerCase().includes(searchTerm.toLowerCase())
+    
+    const matchesStatus = filterStatus === 'all' || 
+      (filterStatus === 'active' && user.is_active) ||
+      (filterStatus === 'inactive' && !user.is_active)
+    
+    return matchesSearch && matchesStatus
+  })
+  
+  const personnelUsers = allPersonnelUsers.filter(user => {
+    const matchesSearch = !searchTerm || 
+      user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.rank.toLowerCase().includes(searchTerm.toLowerCase())
+    
+    const matchesStatus = filterStatus === 'all' || 
+      (filterStatus === 'active' && user.is_active) ||
+      (filterStatus === 'inactive' && !user.is_active)
+    
+    return matchesSearch && matchesStatus
+  })
+  
+  // Auto refresh state
+  const [autoRefresh, setAutoRefresh] = useState(false)
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
   
   // Edit dialog states
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -103,211 +147,22 @@ export function ManageUsers() {
   // Simple cache for assignment history to avoid repeated API calls
   const [historyCache, setHistoryCache] = useState<Record<string, AssignmentHistory[]>>({})
 
-  // Auto refresh state
-  const [autoRefresh, setAutoRefresh] = useState(false)
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
-
-  // Get auth store functions - use useAuthStore.getState() to avoid dependency issues
-  const sessionRefreshed = useAuthStore(state => state.sessionRefreshed)
-
-  const loadUsers = useCallback(async (showLoading = true) => {
-    if (showLoading) setLoading(true)
-    try {
-      console.log('🔄 loadUsers called, showLoading:', showLoading)
-      
-      // Use the auth store method directly to avoid dependency issues
-      const session = await useAuthStore.getState().getValidSession()
-      
-      console.log('📝 Session check result:', !!session, session?.access_token ? 'has token' : 'no token')
-      
-      if (!session) {
-        toast.error('Authentication required - please log in again')
-        // Optionally redirect to login
-        window.location.href = '/login'
-        return
-      }
-
-      const searchParams = new URLSearchParams({
-        type: 'all',
-        search: searchTerm,
-        role: 'all', // Use 'all' since filterRole is removed
-        status: filterStatus,
-        // Add timestamp to prevent caching and ensure fresh data
-        _t: Date.now().toString()
-      })
-
-      const response = await fetch(`/api/users?${searchParams}`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        }
-      })
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-        
-        // If token expired, try refreshing and retry once
-        if (response.status === 401 && errorData.code === 'TOKEN_EXPIRED') {
-          console.log('Token expired, attempting refresh and retry...')
-          const { refreshSession } = useAuthStore.getState()
-          const newSession = await refreshSession()
-          
-          if (newSession) {
-            // Retry the request with new token
-            const retryResponse = await fetch(`/api/users?${searchParams}`, {
-              headers: {
-                'Authorization': `Bearer ${newSession.access_token}`,
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache'
-              }
-            })
-            
-            if (retryResponse.ok) {
-              const retryData = await retryResponse.json()
-              if (retryData.adminUsers) {
-                setAdminUsers(retryData.adminUsers)
-              }
-              if (retryData.personnelUsers) {
-                setPersonnelUsers(retryData.personnelUsers)
-              }
-              return // Success after retry
-            }
-          }
-        }
-        
-        throw new Error(errorData.error || 'Failed to fetch users')
-      }
-
-      const data = await response.json()
-      
-      if (data.adminUsers) {
-        setAdminUsers(data.adminUsers)
-      }
-      if (data.personnelUsers) {
-        setPersonnelUsers(data.personnelUsers)
-      }
-    } catch (error) {
-      if (showLoading) {
-        toast.error(error instanceof Error ? error.message : 'Failed to load users')
-        console.error('Error loading users:', error)
-      }
-      
-      // Only show fallback in development and when showing loading
-      if (showLoading && process.env.NODE_ENV === 'development') {
-        const mockAdminUsers: AdminUser[] = [
-        {
-          id: '1',
-          rank: 'Police Colonel',
-          full_name: 'Juan Carlos Santos',
-          email: 'jc.santos@pnp.gov.ph',
-          role: 'superadmin',
-          is_active: true,
-          created_at: '2024-01-15T10:30:00Z',
-          updated_at: '2024-01-15T10:30:00Z'
-        },
-        {
-          id: '2',
-          rank: 'Police Major',
-          full_name: 'Maria Elena Rodriguez',
-          email: 'me.rodriguez@pnp.gov.ph',
-          role: 'regional',
-          is_active: true,
-          created_at: '2024-02-10T14:20:00Z',
-          updated_at: '2024-02-10T14:20:00Z'
-        },
-        {
-          id: '3',
-          rank: 'Police Captain',
-          full_name: 'Roberto Miguel Cruz',
-          email: 'rm.cruz@pnp.gov.ph',
-          role: 'provincial',
-          is_active: false,
-          created_at: '2024-03-05T09:15:00Z',
-          updated_at: '2024-03-05T09:15:00Z'
-        }
-      ]
-
-      const mockPersonnelUsers: PersonnelUser[] = [
-        {
-          id: '4',
-          rank: 'Police Officer III',
-          full_name: 'Jose Antonio Dela Cruz',
-          email: 'ja.delacruz@pnp.gov.ph',
-          contact_number: '+63 917 123 4567',
-          province: 'Oriental Mindoro PPO',
-          unit: 'Oriental Mindoro PPO',
-          sub_unit: 'Calapan CPS - Investigation Unit',
-          is_active: true,
-          created_at: '2024-01-20T11:45:00Z',
-          updated_at: '2024-01-20T11:45:00Z'
-        },
-        {
-          id: '5',
-          rank: 'Police Officer II',
-          full_name: 'Ana Marie Gonzales',
-          email: 'am.gonzales@pnp.gov.ph',
-          contact_number: '+63 917 765 4321',
-          province: 'Palawan PPO',
-          unit: 'Palawan PPO',
-          sub_unit: 'Puerto Princesa CPS - Patrol Unit',
-          is_active: true,
-          created_at: '2024-02-15T16:30:00Z',
-          updated_at: '2024-02-15T16:30:00Z'
-        }
-      ]
-
-        setAdminUsers(mockAdminUsers)
-        setPersonnelUsers(mockPersonnelUsers)
-      }
-    } finally {
-      if (showLoading) setLoading(false)
-    }
-  }, [searchTerm, filterStatus]) // Remove getValidSession dependency
-
-  // Load users from API
-  useEffect(() => {
-    loadUsers()
-    setLastRefresh(new Date())
-  }, [loadUsers])
-
-  // Reload data when session is refreshed
-  useEffect(() => {
-    console.log('🔔 Session refresh effect triggered, sessionRefreshed:', sessionRefreshed)
-    if (sessionRefreshed > 0) {
-      console.log('Session refreshed, reloading user data...')
-      loadUsers(false) // Silent reload without loading spinner
-      setLastRefresh(new Date())
-    }
-  }, [sessionRefreshed, loadUsers])
-
-  // Auto-refresh every 30 seconds when enabled
+  // Auto-refresh every 2 minutes when enabled (reduced frequency)
   useEffect(() => {
     if (!autoRefresh) return
-
     const interval = setInterval(() => {
-      loadUsers(false) // Silent refresh without loading state
+      refresh()
       setLastRefresh(new Date())
-    }, 30000) // 30 seconds
-
+    }, 120000) // Changed from 30 seconds to 2 minutes
     return () => clearInterval(interval)
-  }, [autoRefresh, loadUsers])
+  }, [autoRefresh]) // Removed refresh dependency to prevent recreation
 
   // Manual refresh function for button click
   const handleManualRefresh = useCallback(() => {
-    loadUsers(true)
+    refresh()
     setLastRefresh(new Date())
     toast.success('Users data refreshed')
-  }, [loadUsers])
-
-  // Reload users when filters change
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      loadUsers()
-      setLastRefresh(new Date())
-    }, 500) // Debounce search
-
-    return () => clearTimeout(timeoutId)
-  }, [searchTerm, filterStatus, loadUsers])
+  }, [])
 
   const getRoleInfo = (role: AdminRole) => {
     const roleConfig = {
@@ -681,21 +536,10 @@ export function ManageUsers() {
         throw new Error('Failed to update user status')
       }
 
-      // Update local state
-      if (userType === 'admin') {
-        setAdminUsers(prev => prev.map(user => 
-          user.id === userId ? { ...user, is_active: !user.is_active } : user
-        ))
-      } else {
-        setPersonnelUsers(prev => prev.map(user => 
-          user.id === userId ? { ...user, is_active: !user.is_active } : user
-        ))
-      }
-      
       toast.success('User status updated successfully')
       
       // Refresh data to ensure consistency
-      setTimeout(() => loadUsers(false), 1000)
+      setTimeout(() => refresh(), 1000)
     } catch (error) {
       toast.error('Failed to update user status')
       console.error('Error updating user status:', error)
@@ -762,31 +606,15 @@ export function ManageUsers() {
 
       const result = await response.json()
 
-      // Update local state based on the operation type
+      // Show appropriate success message
       if (result.type === 'permanent') {
-        // Remove user from local state (permanent deletion)
-        if (userType === 'admin') {
-          setAdminUsers(prev => prev.filter(user => user.id !== userId))
-        } else {
-          setPersonnelUsers(prev => prev.filter(user => user.id !== userId))
-        }
         toast.success(`${user.full_name} has been permanently deleted`)
       } else if (result.type === 'deactivated') {
-        // Update user status in local state (soft delete)
-        if (userType === 'admin') {
-          setAdminUsers(prev => prev.map(user => 
-            user.id === userId ? { ...user, is_active: false } : user
-          ))
-        } else {
-          setPersonnelUsers(prev => prev.map(user => 
-            user.id === userId ? { ...user, is_active: false } : user
-          ))
-        }
         toast.success(`${user.full_name} has been deactivated`)
       }
       
       // Refresh data to ensure consistency
-      setTimeout(() => loadUsers(false), 1000)
+      setTimeout(() => refresh(), 1000)
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to delete user'
@@ -850,17 +678,6 @@ export function ManageUsers() {
 
       const result = await response.json()
 
-      // Update local state
-      if (editingUserType === 'admin') {
-        setAdminUsers(prev => prev.map(user => 
-          user.id === editingUser.id ? { ...user, ...editForm } : user
-        ))
-      } else {
-        setPersonnelUsers(prev => prev.map(user => 
-          user.id === editingUser.id ? { ...user, ...editForm } : user
-        ))
-      }
-
       toast.success('User updated successfully')
       setEditDialogOpen(false)
       setEditingUser(null)
@@ -879,7 +696,7 @@ export function ManageUsers() {
       }
 
       // Refresh data to ensure consistency
-      setTimeout(() => loadUsers(false), 1000)
+      setTimeout(() => refresh(), 1000)
 
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to update user')

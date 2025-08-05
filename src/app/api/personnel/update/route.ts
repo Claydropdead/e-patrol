@@ -89,7 +89,7 @@ export async function PUT(request: NextRequest) {
     )
 
     // Separate personnel updates from reassignment data
-    const { reassignment_reason, reassignment_notes: _reassignmentNotes, ...personnelUpdates } = updates
+    const { reassignment_reason, reassignment_notes, ...personnelUpdates } = updates
 
     // Update personnel record (excluding reassignment fields)
     const { data: updatedPersonnel, error: updateError } = await supabaseAdmin
@@ -125,7 +125,8 @@ export async function PUT(request: NextRequest) {
           new_sub_unit: personnelUpdates.sub_unit || currentPersonnel.sub_unit,
           new_province: personnelUpdates.province || currentPersonnel.province,
           changed_by: tokenUser.user.id,
-          reason: reassignment_reason || 'Administrative update'
+          reason: reassignment_reason || 'Administrative update',
+          notes: reassignment_notes
         })
     }
 
