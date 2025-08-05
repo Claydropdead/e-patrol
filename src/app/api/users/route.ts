@@ -56,8 +56,13 @@ export async function GET(request: NextRequest) {
     const { data: tokenUser, error: tokenError } = await supabaseAdmin.auth.getUser(token)
     
     if (tokenError || !tokenUser?.user) {
+      console.error('Token validation error:', tokenError)
       return NextResponse.json(
-        { error: 'Unauthorized - Invalid token' },
+        { 
+          error: 'Unauthorized - Token expired or invalid',
+          code: 'TOKEN_EXPIRED',
+          details: tokenError?.message || 'Invalid token'
+        },
         { status: 401 }
       )
     }
@@ -248,7 +253,7 @@ export async function PUT(request: NextRequest) {
           )
         }
 
-        const updateData: any = { 
+        const updateData: { is_active: boolean; updated_at?: string } = { 
           is_active: !currentUser.is_active
         }
         
@@ -276,7 +281,7 @@ export async function PUT(request: NextRequest) {
 
       case 'update':
         // Update user data
-        const updatePayload: any = { ...data }
+        const updatePayload: Record<string, unknown> = { ...data }
         
         // Only add updated_at for admin_accounts table (personnel table might not have this column)
         if (tableName === 'admin_accounts') {
@@ -414,7 +419,7 @@ export async function DELETE(request: NextRequest) {
       }
     } else if (currentUser.is_active) {
       // Soft delete - deactivate active user
-      const updateData: any = { 
+      const updateData: { is_active: boolean; updated_at?: string } = { 
         is_active: false
       }
       

@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase/client'
+import { useAuthStore } from '@/lib/stores/auth'
 import { toast } from 'sonner'
 import { RefreshCw, Activity } from 'lucide-react'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 
 interface AuditEntry {
   id: string
@@ -42,6 +44,9 @@ export function AuditLogsViewer() {
     page: 1
   })
 
+  // Get auth store values - use selector to avoid dependency issues
+  const sessionRefreshed = useAuthStore(state => state.sessionRefreshed)
+
   // Helper function to format audit data
   const formatAuditData = (log: AuditEntry): string => {
     if (!log.new_data) return 'No data available'
@@ -62,9 +67,10 @@ export function AuditLogsViewer() {
     setError(null)
     
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      // Use the auth store method directly to avoid dependency issues
+      const session = await useAuthStore.getState().getValidSession()
       if (!session) {
-        throw new Error('Authentication required')
+        throw new Error('Authentication required - please log in again')
       }
 
       const params = new URLSearchParams({
@@ -107,11 +113,11 @@ export function AuditLogsViewer() {
     } finally {
       if (showLoading) setLoading(false)
     }
-  }, [filters.page, filters.table, filters.operation, filters.userId])
+  }, [filters.page, filters.table, filters.operation, filters.userId]) // Remove getValidSession dependency
 
   const fetchStats = useCallback(async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      const session = await useAuthStore.getState().getValidSession()
       if (!session) return
 
       const response = await fetch(`/api/audit?_t=${Date.now()}`, {
@@ -162,7 +168,8 @@ export function AuditLogsViewer() {
     try {
       await loadAuditData(false)
       toast.success('Audit logs refreshed')
-    } catch (error) {
+    } catch (err) {
+      console.error('Refresh error:', err)
       toast.error('Failed to refresh audit logs')
     } finally {
       setRefreshing(false)
@@ -172,20 +179,37 @@ export function AuditLogsViewer() {
   // Load data when component mounts
   useEffect(() => {
     loadAuditData(true)
-  }, []) // Remove function dependencies to prevent infinite loop
+  }, [loadAuditData]) // Add loadAuditData to dependencies
 
   // Separate effect for filter changes
   useEffect(() => {
     fetchAuditLogs(true)
   }, [fetchAuditLogs])
 
+  // Reload data when session is refreshed
+  useEffect(() => {
+    if (sessionRefreshed > 0) {
+      console.log('Session refreshed, reloading audit logs...')
+      fetchAuditLogs(false) // Silent reload without loading spinner
+    }
+  }, [sessionRefreshed, fetchAuditLogs])
+
   // Real-time subscription for audit logs
   useEffect(() => {
-    let channel: any = null;
+    const channel: RealtimeChannel = supabase
+      .channel('audit-logs-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'audit_logs' },
+        (payload) => {
+          console.log('Audit log change:', payload)
+          // Refresh audit logs when changes occur
+          fetchAuditLogs(false)
+        }
+      )
     
     const setupRealTime = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
+        const session = await useAuthStore.getState().getValidSession()
         if (!session) {
           console.log('No session available for real-time subscription')
           setRealTimeStatus('disconnected')

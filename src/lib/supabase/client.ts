@@ -18,7 +18,8 @@ export const createClient = (): SupabaseClient => {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      storageKey: 'e-patrol-auth-token'
+      storageKey: 'e-patrol-auth-token',
+      flowType: 'pkce'
     },
     db: {
       schema: 'public'
@@ -26,6 +27,11 @@ export const createClient = (): SupabaseClient => {
     global: {
       headers: {
         'X-Client-Info': 'e-patrol-web'
+      }
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 10
       }
     }
   })

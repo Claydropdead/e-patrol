@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase/client'
+import { useAuthStore } from '@/lib/stores/auth'
 import { MIMAROPA_STRUCTURE } from '@/lib/constants/mimaropa'
 import type { AdminRole } from '@/lib/types/database'
 
@@ -106,15 +107,23 @@ export function ManageUsers() {
   const [autoRefresh, setAutoRefresh] = useState(false)
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
 
-  // Use singleton supabase instance
+  // Get auth store functions - use useAuthStore.getState() to avoid dependency issues
+  const sessionRefreshed = useAuthStore(state => state.sessionRefreshed)
 
   const loadUsers = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      console.log('🔄 loadUsers called, showLoading:', showLoading)
+      
+      // Use the auth store method directly to avoid dependency issues
+      const session = await useAuthStore.getState().getValidSession()
+      
+      console.log('📝 Session check result:', !!session, session?.access_token ? 'has token' : 'no token')
       
       if (!session) {
-        toast.error('Authentication required')
+        toast.error('Authentication required - please log in again')
+        // Optionally redirect to login
+        window.location.href = '/login'
         return
       }
 
@@ -136,6 +145,36 @@ export function ManageUsers() {
       })
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        
+        // If token expired, try refreshing and retry once
+        if (response.status === 401 && errorData.code === 'TOKEN_EXPIRED') {
+          console.log('Token expired, attempting refresh and retry...')
+          const { refreshSession } = useAuthStore.getState()
+          const newSession = await refreshSession()
+          
+          if (newSession) {
+            // Retry the request with new token
+            const retryResponse = await fetch(`/api/users?${searchParams}`, {
+              headers: {
+                'Authorization': `Bearer ${newSession.access_token}`,
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache'
+              }
+            })
+            
+            if (retryResponse.ok) {
+              const retryData = await retryResponse.json()
+              if (retryData.adminUsers) {
+                setAdminUsers(retryData.adminUsers)
+              }
+              if (retryData.personnelUsers) {
+                setPersonnelUsers(retryData.personnelUsers)
+              }
+              return // Success after retry
+            }
+          }
+        }
+        
         throw new Error(errorData.error || 'Failed to fetch users')
       }
 
@@ -223,13 +262,23 @@ export function ManageUsers() {
     } finally {
       if (showLoading) setLoading(false)
     }
-  }, [searchTerm, filterStatus]) // Dependencies for useCallback
+  }, [searchTerm, filterStatus]) // Remove getValidSession dependency
 
   // Load users from API
   useEffect(() => {
     loadUsers()
     setLastRefresh(new Date())
   }, [loadUsers])
+
+  // Reload data when session is refreshed
+  useEffect(() => {
+    console.log('🔔 Session refresh effect triggered, sessionRefreshed:', sessionRefreshed)
+    if (sessionRefreshed > 0) {
+      console.log('Session refreshed, reloading user data...')
+      loadUsers(false) // Silent reload without loading spinner
+      setLastRefresh(new Date())
+    }
+  }, [sessionRefreshed, loadUsers])
 
   // Auto-refresh every 30 seconds when enabled
   useEffect(() => {
@@ -608,7 +657,7 @@ export function ManageUsers() {
 
   const handleToggleUserStatus = async (userId: string, userType: UserType) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      const session = await useAuthStore.getState().getValidSession()
       
       if (!session) {
         toast.error('Authentication required')
@@ -691,7 +740,7 @@ export function ManageUsers() {
     }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      const session = await useAuthStore.getState().getValidSession()
       
       if (!session) {
         toast.error('Authentication required')
@@ -775,7 +824,7 @@ export function ManageUsers() {
 
     setEditLoading(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      const session = await useAuthStore.getState().getValidSession()
       if (!session) {
         toast.error('Authentication required')
         return
@@ -854,7 +903,7 @@ export function ManageUsers() {
     setAssignmentHistory([]) // Clear previous data immediately
     
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      const session = await useAuthStore.getState().getValidSession()
       if (!session) {
         toast.error('Authentication required')
         return
@@ -895,7 +944,7 @@ export function ManageUsers() {
       console.log('Assignment history received:', historyData)
       
       // Simple validation - just ensure we have basic required fields
-      const filteredHistory = historyData.filter((record: any) => {
+      const filteredHistory = historyData.filter((record: AssignmentHistory) => {
         return record.personnel_id && (record.previous_unit || record.new_unit)
       })
       

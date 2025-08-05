@@ -10,12 +10,16 @@ interface AuthState {
   userType: 'admin' | 'personnel' | null
   loading: boolean
   error: string | null
+  sessionRefreshed: number // Add this to track when session is refreshed
   
   // Actions
   initialize: () => Promise<void>
   signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
   signOut: () => Promise<void>
   fetchUserProfile: () => Promise<void>
+  refreshSession: () => Promise<Session | null>
+  getValidSession: () => Promise<Session | null>
+  triggerDataRefresh: () => void // Add this to manually trigger data refresh
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -25,6 +29,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   userType: null,
   loading: true,
   error: null,
+  sessionRefreshed: 0, // Initialize session refresh counter
 
   initialize: async () => {
     try {
@@ -37,13 +42,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (session?.user) {
         set({ user: session.user })
         await get().fetchUserProfile()
+        // Trigger initial data refresh when session is first established
+        set({ sessionRefreshed: Date.now() })
       }
       
       // Listen for auth changes
       supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
-        if (session?.user) {
+        console.log('Auth state change:', event, session?.user?.id)
+        
+        if (event === 'SIGNED_OUT') {
+          set({ user: null, adminAccount: null, personnel: null, userType: null })
+        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+          console.log('Token refreshed, updating user profile')
+          set({ 
+            user: session.user,
+            sessionRefreshed: Date.now() // Update refresh timestamp
+          })
+          await get().fetchUserProfile()
+        } else if (session?.user) {
           set({ user: session.user })
           await get().fetchUserProfile()
+          // Trigger data refresh when session changes
+          set({ sessionRefreshed: Date.now() })
         } else {
           set({ user: null, adminAccount: null, personnel: null, userType: null })
         }
@@ -185,5 +205,57 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       console.error('Error in fetchUserProfile:', error)
       set({ error: (error as Error).message })
     }
+  },
+
+  refreshSession: async () => {
+    try {
+      const { data, error } = await supabase.auth.refreshSession()
+      if (error) throw error
+      
+      if (data.session) {
+        set({ 
+          user: data.session.user,
+          sessionRefreshed: Date.now() // Update refresh timestamp
+        })
+        return data.session
+      }
+      return null
+    } catch (error) {
+      console.error('Error refreshing session:', error)
+      set({ error: 'Session refresh failed' })
+      return null
+    }
+  },
+
+  getValidSession: async () => {
+    try {
+      // First try to get current session
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        return null
+      }
+      
+      // Check if token is close to expiry (within 5 minutes)
+      const expiresAt = session.expires_at ? session.expires_at * 1000 : 0
+      const now = Date.now()
+      const fiveMinutes = 5 * 60 * 1000
+      
+      if (expiresAt - now < fiveMinutes) {
+        console.log('Token expires soon, refreshing...')
+        const state = get()
+        return await state.refreshSession()
+      }
+      
+      return session
+    } catch (error) {
+      console.error('Error getting valid session:', error)
+      return null
+    }
+  },
+
+  triggerDataRefresh: () => {
+    // Manually trigger data refresh by updating the timestamp
+    set({ sessionRefreshed: Date.now() })
   }
 }))

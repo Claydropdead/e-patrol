@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase/client'
+import { useAuthStore } from '@/lib/stores/auth'
 import { toast } from 'sonner'
 import { MIMAROPA_STRUCTURE } from '@/lib/constants/mimaropa'
 
@@ -44,10 +45,10 @@ export function PersonnelCreationForm() {
     
     setLoading(true)
     try {
-      // Get the current session for authentication
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      // Use the auth store method for reliable session management
+      const session = await useAuthStore.getState().getValidSession()
       
-      if (sessionError || !session?.access_token) {
+      if (!session?.access_token) {
         throw new Error('Authentication failed - please login again')
       }
       
