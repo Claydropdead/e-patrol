@@ -73,8 +73,7 @@ export async function POST(request: NextRequest) {
         contact_number: contact_number || null,
         province,
         unit,
-        sub_unit,
-        created_by: tokenUser.user.id
+        sub_unit
       })
       .select()
       .single()
