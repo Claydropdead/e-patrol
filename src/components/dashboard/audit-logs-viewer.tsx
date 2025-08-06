@@ -503,13 +503,13 @@ export function AuditLogsViewer() {
         </div>
         
         <div className="overflow-x-auto">
-          <table className="w-full table-fixed">
+          <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-12">Action</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-40">Timestamp</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-32">Module</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-24">Operation</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-36">Operation</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase min-w-[200px]">Old Data</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase min-w-[200px]">New Data</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-32">Changed By</th>
@@ -559,17 +559,8 @@ export function AuditLogsViewer() {
                           {log.operation === 'INSERT' ? (
                             <span className="text-gray-400 italic">New record</span>
                           ) : (
-                            <div className="group relative">
-                              <div className="truncate cursor-pointer hover:text-blue-600 transition-colors" title="Hover to view details">
-                                {changes.old}
-                              </div>
-                              <div className="absolute z-20 invisible group-hover:visible bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl max-w-sm top-0 left-0 transform -translate-y-full border border-gray-700">
-                                <div className="font-medium mb-2 text-blue-300">📋 Original Data:</div>
-                                <div className="whitespace-pre-line break-words text-gray-200 leading-relaxed">
-                                  {formatTooltipContent(log.old_data, 'old')}
-                                </div>
-                                <div className="absolute bottom-0 left-4 w-2 h-2 bg-gray-900 transform rotate-45 translate-y-1"></div>
-                              </div>
+                            <div className="truncate">
+                              {changes.old}
                             </div>
                           )}
                         </td>
@@ -577,17 +568,8 @@ export function AuditLogsViewer() {
                           {log.operation === 'DELETE' ? (
                             <span className="text-gray-400 italic">Record deleted</span>
                           ) : (
-                            <div className="group relative">
-                              <div className="truncate cursor-pointer hover:text-blue-600 transition-colors" title="Hover to view details">
-                                {changes.new}
-                              </div>
-                              <div className="absolute z-20 invisible group-hover:visible bg-gray-900 text-white text-xs rounded-lg p-3 shadow-xl max-w-sm top-0 left-0 transform -translate-y-full border border-gray-700">
-                                <div className="font-medium mb-2 text-green-300">✨ Updated Data:</div>
-                                <div className="whitespace-pre-line break-words text-gray-200 leading-relaxed">
-                                  {formatTooltipContent(log.new_data, 'new')}
-                                </div>
-                                <div className="absolute bottom-0 left-4 w-2 h-2 bg-gray-900 transform rotate-45 translate-y-1"></div>
-                              </div>
+                            <div className="truncate">
+                              {changes.new}
                             </div>
                           )}
                         </td>
