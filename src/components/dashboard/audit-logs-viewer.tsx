@@ -58,7 +58,7 @@ export function AuditLogsViewer() {
   const [refreshing, setRefreshing] = useState(false)
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
 
-  // Use stable API hook for audit logs
+  // Use stable API hook for audit logs - fetch all data without filters
   const {
     data: auditResponse,
     loading,
@@ -67,11 +67,8 @@ export function AuditLogsViewer() {
   } = useApiData<AuditResponse>({
     endpoint: '/api/audit',
     params: {
-      page: filters.page.toString(),
-      limit: '25',
-      ...(filters.table !== 'all' && { table: filters.table }),
-      ...(filters.operation !== 'all' && { operation: filters.operation }),
-      ...(filters.userId && { userId: filters.userId })
+      page: '1',
+      limit: '100' // Fetch more records to enable client-side filtering
     },
     onError: (errorMsg) => toast.error(`Audit logs error: ${errorMsg}`)
   })
@@ -107,7 +104,41 @@ export function AuditLogsViewer() {
   }
 
   const auditLogs = auditResponse?.data || []
-  const pagination = auditResponse?.pagination
+  
+  // Client-side filtering
+  const filteredLogs = auditLogs.filter(log => {
+    // Filter by table
+    if (filters.table !== 'all' && log.table_name !== filters.table) {
+      return false
+    }
+    
+    // Filter by operation
+    if (filters.operation !== 'all' && log.operation !== filters.operation) {
+      return false
+    }
+    
+    // Filter by user ID
+    if (filters.userId && !log.changed_by?.includes(filters.userId) && !log.changed_by_name?.toLowerCase().includes(filters.userId.toLowerCase())) {
+      return false
+    }
+    
+    return true
+  })
+  
+  // Client-side pagination
+  const itemsPerPage = 25
+  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage)
+  const startIndex = (filters.page - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedLogs = filteredLogs.slice(startIndex, endIndex)
+  
+  // Create pagination object
+  const pagination = {
+    page: filters.page,
+    limit: itemsPerPage,
+    total: filteredLogs.length,
+    totalPages: totalPages
+  }
 
   // Helper function to get user-friendly table names
   const getTableDisplayName = (tableName: string): string => {
@@ -321,18 +352,19 @@ export function AuditLogsViewer() {
 
   // Filter change handler
   const handleFilterChange = (key: string, value: string) => {
-    setFilters(prev => ({ ...prev, [key]: value, page: 1 }))
+    if (key === 'page') {
+      // For page changes, don't reset to page 1
+      setFilters(prev => ({ ...prev, [key]: parseInt(value) }))
+    } else {
+      // For other filter changes, reset to page 1
+      setFilters(prev => ({ ...prev, [key]: value, page: 1 }))
+    }
   }
 
   // Clear all filters
   const clearFilters = () => {
     setFilters({ table: 'all', operation: 'all', userId: '', page: 1 })
   }
-
-  // Refetch when filters change
-  useEffect(() => {
-    refresh()
-  }, [filters, refresh])
 
   // Fetch stats on mount
   useEffect(() => {
@@ -516,14 +548,14 @@ export function AuditLogsViewer() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {auditLogs.length === 0 ? (
+              {paginatedLogs.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                     No audit logs found
                   </td>
                 </tr>
               ) : (
-                auditLogs.map((log, index) => {
+                paginatedLogs.map((log, index) => {
                   const changes = formatAuditChanges(log)
                   const isExpanded = expandedRow === log.id
                   return (
@@ -696,7 +728,7 @@ export function AuditLogsViewer() {
               Page {filters.page} of {pagination.totalPages}
             </span>
             <span className="text-xs text-gray-400">
-              ({auditLogs.length} entries / {pagination.total} total)
+              ({paginatedLogs.length} entries / {filteredLogs.length} total)
             </span>
           </div>
           
