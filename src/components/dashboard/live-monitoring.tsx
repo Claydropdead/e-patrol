@@ -20,7 +20,11 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 // Mini map component for Live Monitoring
-function MiniMap({ personnel, beats }: { personnel: PersonnelData[], beats: any[] }) {
+function MiniMap({ personnel, beats, onMapReady }: { 
+  personnel: PersonnelData[], 
+  beats: any[], 
+  onMapReady?: (map: L.Map) => void 
+}) {
   const [isLoaded, setIsLoaded] = useState(false)
   const mapRef = useRef<L.Map | null>(null)
 
@@ -94,6 +98,11 @@ function MiniMap({ personnel, beats }: { personnel: PersonnelData[], beats: any[
 
         mapRef.current = newMap
         console.log('🗺️ Mini map initialized successfully')
+
+        // Notify parent component that map is ready
+        if (onMapReady) {
+          onMapReady(newMap)
+        }
 
       } catch (error) {
         console.error('Error initializing mini map:', error)
@@ -274,33 +283,8 @@ function MiniMap({ personnel, beats }: { personnel: PersonnelData[], beats: any[
 
         console.log('✅ Added', markersAdded, 'markers to map')
 
-        // Fit map to show all markers after a short delay
-        if (markersAdded > 0) {
-          setTimeout(() => {
-            const personnelWithCoords = personnel.filter(person => person.status === 'on_duty').map((person, index) => {
-              let lat = person.latitude
-              let lng = person.longitude
-              
-              if (!lat || !lng) {
-                const baseCoords = [
-                  [13.4, 121.0], [12.5, 121.7], [11.5, 120.0], 
-                  [9.5, 118.7], [13.2, 120.9], [13.0, 121.3]
-                ]
-                const baseIndex = index % baseCoords.length
-                lat = baseCoords[baseIndex][0] + (Math.random() - 0.5) * 0.2
-                lng = baseCoords[baseIndex][1] + (Math.random() - 0.5) * 0.2
-              }
-              
-              return L.latLng(lat!, lng!)
-            })
-            
-            if (personnelWithCoords.length > 0) {
-              const bounds = L.latLngBounds(personnelWithCoords)
-              mapRef.current?.fitBounds(bounds.pad(0.1))
-              console.log('🎯 Map fitted to bounds with', personnelWithCoords.length, 'points')
-            }
-          }, 500)
-        }
+        // Don't auto-zoom - let user control map navigation
+        // Users can click on personnel cards to focus on specific locations
 
       } catch (error) {
         console.error('Error updating markers:', error)
@@ -543,6 +527,44 @@ export function LiveMonitoring() {
   const [subUnitFilter, setSubUnitFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [lastUpdate, setLastUpdate] = useState(new Date())
+  const mapInstance = useRef<L.Map | null>(null)
+
+  // Function to focus map on specific personnel location
+  const focusOnPersonnel = (person: PersonnelData) => {
+    if (!mapInstance.current) return
+    
+    let lat = person.latitude
+    let lng = person.longitude
+    
+    // Use mock coordinates if real ones don't exist (same logic as in map)
+    if (!lat || !lng) {
+      const baseCoords = [
+        [13.4, 121.0], // Marinduque area
+        [12.5, 121.7], // Romblon area  
+        [11.5, 120.0], // Palawan north
+        [9.5, 118.7],  // Palawan south
+        [13.2, 120.9], // Occidental Mindoro
+        [13.0, 121.3], // Oriental Mindoro
+      ]
+      const personIndex = personnel.findIndex(p => p.id === person.id)
+      const baseIndex = personIndex % baseCoords.length
+      lat = baseCoords[baseIndex][0] + (Math.random() - 0.5) * 0.2
+      lng = baseCoords[baseIndex][1] + (Math.random() - 0.5) * 0.2
+    }
+    
+    if (lat && lng) {
+      mapInstance.current.setView([lat, lng], 15, {
+        animate: true,
+        duration: 1
+      })
+      console.log(`🎯 Focused map on ${person.full_name} at ${lat}, ${lng}`)
+    }
+  }
+
+  // Handle map ready callback
+  const handleMapReady = (map: L.Map) => {
+    mapInstance.current = map
+  }
 
   // Fetch personnel data from API
   const fetchPersonnelData = async () => {
@@ -881,6 +903,7 @@ export function LiveMonitoring() {
                     <MiniMap 
                       personnel={filteredPersonnel.filter(p => p.latitude && p.longitude && p.status === 'on_duty')} 
                       beats={beats}
+                      onMapReady={handleMapReady}
                     />
                     {/* Map Legend */}
                     <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg border p-3 z-[1000]">
@@ -915,6 +938,7 @@ export function LiveMonitoring() {
                 <CardTitle className="flex items-center">
                   <Users className="h-5 w-5 mr-2" />
                   Personnel Live Location Tracking
+                  <span className="ml-2 text-xs text-gray-500 font-normal">(Click cards to focus map)</span>
                 </CardTitle>
                 <div className="flex items-center space-x-2">
                   <span className="text-xs text-gray-500">
@@ -1058,7 +1082,9 @@ export function LiveMonitoring() {
                       return (
                         <div
                           key={person.id || `person-${index}`}
-                          className={`p-3 rounded-lg border ${statusConfig.bgColor} ${statusConfig.borderColor} hover:shadow-sm transition-shadow cursor-pointer`}
+                          className={`p-3 rounded-lg border ${statusConfig.bgColor} ${statusConfig.borderColor} hover:shadow-md hover:scale-[1.02] transition-all duration-200 cursor-pointer`}
+                          onClick={() => focusOnPersonnel(person)}
+                          title="Click to focus map on this personnel location"
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-3">
