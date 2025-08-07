@@ -73,12 +73,144 @@ function MiniMap({ personnel, beats, onMapReady }: {
           trackResize: true
         })
 
-        // Add tile layer with better contrast
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
-          maxZoom: 18,
-          minZoom: 6
-        }).addTo(newMap)
+        // Define multiple terrain layers
+        const baseLayers = {
+          'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+            maxZoom: 18,
+            minZoom: 6
+          }),
+          'Satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '&copy; <a href="https://www.esri.com/">Esri</a>',
+            maxZoom: 18,
+            minZoom: 6
+          }),
+          'Terrain': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a> contributors',
+            maxZoom: 17,
+            minZoom: 6
+          }),
+          'Dark Mode': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.carto.com/">CARTO</a>',
+            maxZoom: 18,
+            minZoom: 6
+          }),
+          'Light Mode': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.carto.com/">CARTO</a>',
+            maxZoom: 18,
+            minZoom: 6
+          })
+        }
+
+        // Add default terrain layer (OpenStreetMap)
+        baseLayers['Terrain'].addTo(newMap)
+
+        // Add layer control for switching between terrains
+        L.control.layers(baseLayers).addTo(newMap)
+
+        // Add fullscreen control
+        const FullscreenControl = L.Control.extend({
+          options: {
+            position: 'topleft'
+          },
+          
+          onAdd: function(map: L.Map) {
+            const div = L.DomUtil.create('div', 'leaflet-control-fullscreen')
+            div.innerHTML = `
+              <button type="button" class="leaflet-control-fullscreen-button" title="Toggle Fullscreen" style="
+                background: white;
+                border: 2px solid rgba(0,0,0,0.2);
+                border-radius: 4px;
+                width: 30px;
+                height: 30px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 14px;
+                box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+              ">
+                ⛶
+              </button>
+            `
+
+            const button = div.querySelector('.leaflet-control-fullscreen-button') as HTMLButtonElement
+            
+            button?.addEventListener('click', () => {
+              const mapContainer = document.getElementById('mini-map')
+              if (!mapContainer) return
+
+              if (!document.fullscreenElement) {
+                // Enter fullscreen
+                mapContainer.requestFullscreen().then(() => {
+                  mapContainer.style.position = 'fixed'
+                  mapContainer.style.top = '0'
+                  mapContainer.style.left = '0'
+                  mapContainer.style.width = '100vw'
+                  mapContainer.style.height = '100vh'
+                  mapContainer.style.zIndex = '9999'
+                  button.innerHTML = '⛷'
+                  button.title = 'Exit Fullscreen'
+                  
+                  // Invalidate map size to refresh
+                  setTimeout(() => {
+                    map.invalidateSize()
+                  }, 100)
+                }).catch(err => {
+                  console.error('Error entering fullscreen:', err)
+                })
+              } else {
+                // Exit fullscreen
+                document.exitFullscreen().then(() => {
+                  mapContainer.style.position = ''
+                  mapContainer.style.top = ''
+                  mapContainer.style.left = ''
+                  mapContainer.style.width = ''
+                  mapContainer.style.height = ''
+                  mapContainer.style.zIndex = ''
+                  button.innerHTML = '⛶'
+                  button.title = 'Toggle Fullscreen'
+                  
+                  // Invalidate map size to refresh
+                  setTimeout(() => {
+                    map.invalidateSize()
+                  }, 100)
+                }).catch(err => {
+                  console.error('Error exiting fullscreen:', err)
+                })
+              }
+            })
+
+            return div
+          }
+        })
+
+        const fullscreenControl = new FullscreenControl()
+
+        fullscreenControl.addTo(newMap)
+
+        // Handle fullscreen change events (ESC key, etc.)
+        document.addEventListener('fullscreenchange', () => {
+          const mapContainer = document.getElementById('mini-map')
+          const button = document.querySelector('.leaflet-control-fullscreen-button') as HTMLButtonElement
+          
+          if (!document.fullscreenElement && mapContainer && button) {
+            // Reset styles when exiting fullscreen
+            mapContainer.style.position = ''
+            mapContainer.style.top = ''
+            mapContainer.style.left = ''
+            mapContainer.style.width = ''
+            mapContainer.style.height = ''
+            mapContainer.style.zIndex = ''
+            button.innerHTML = '⛶'
+            button.title = 'Toggle Fullscreen'
+            
+            // Invalidate map size to refresh
+            setTimeout(() => {
+              newMap.invalidateSize()
+            }, 100)
+          }
+        })
 
         // Add custom CSS for markers
         const style = document.createElement('style')
@@ -988,6 +1120,13 @@ export function LiveMonitoring() {
                         <div className="flex items-center gap-2">
                           <div className="w-4 h-1 border-2 border-red-500 border-dashed"></div>
                           <span className="text-gray-700">Beat Radius (Violated)</span>
+                        </div>
+                        <hr className="my-2 border-gray-200" />
+                        <div className="text-gray-600">
+                          <p className="font-medium mb-1">Map Controls:</p>
+                          <p className="text-xs">• Layer switcher (top-right)</p>
+                          <p className="text-xs">• Fullscreen toggle (⛶)</p>
+                          <p className="text-xs">• 5 terrain options available</p>
                         </div>
                       </div>
                     </div>
