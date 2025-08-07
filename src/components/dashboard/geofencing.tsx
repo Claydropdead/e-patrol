@@ -362,7 +362,7 @@ export function GeofencingContent() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedProvince, setSelectedProvince] = useState('all')
-  const [sortBy, setSortBy] = useState<'name' | 'province' | 'status' | 'violations'>('name')
+  const [sortBy, setSortBy] = useState<'name' | 'province' | 'status'>('name')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [isCreateBeatOpen, setIsCreateBeatOpen] = useState(false)
   const [selectedBeat, setSelectedBeat] = useState<GeofenceBeat | null>(null)
@@ -490,10 +490,6 @@ export function GeofencingContent() {
             aValue = a.status
             bValue = b.status
             break
-          case 'violations':
-            aValue = a.violations || 0
-            bValue = b.violations || 0
-            break
           default:
             aValue = a.name.toLowerCase()
             bValue = b.name.toLowerCase()
@@ -530,55 +526,6 @@ export function GeofencingContent() {
           </DialogTrigger>
           <CreateBeatDialog onClose={() => setIsCreateBeatOpen(false)} />
         </Dialog>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
-                <Shield className="h-5 w-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Beats</p>
-                <p className="text-2xl font-bold">{beats.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-green-100 dark:bg-green-900 rounded-lg">
-                <CheckCircle className="h-5 w-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Active Beats</p>
-                <p className="text-2xl font-bold">
-                  {beats.filter(b => b.status === 'active').length}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-red-100 dark:bg-red-900 rounded-lg">
-                <Bell className="h-5 w-5 text-red-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Total Violations</p>
-                <p className="text-2xl font-bold">
-                  {violations.filter(v => v.status === 'pending').length}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Search and Filters */}
@@ -692,26 +639,6 @@ export function GeofencingContent() {
                         </th>
                         <th className="text-left py-3 px-2 font-medium text-gray-700">Personnel</th>
                         <th className="text-left py-3 px-2 font-medium text-gray-700">Duty Schedule</th>
-                        <th className="text-left py-3 px-2 font-medium text-gray-700">
-                          <button 
-                            className="flex items-center gap-1 hover:text-gray-900"
-                            onClick={() => {
-                              if (sortBy === 'violations') {
-                                setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
-                              } else {
-                                setSortBy('violations')
-                                setSortOrder('asc')
-                              }
-                            }}
-                          >
-                            Violations
-                            {sortBy === 'violations' && (
-                              sortOrder === 'asc' ? 
-                                <ChevronUp className="h-4 w-4" /> : 
-                                <ChevronDown className="h-4 w-4" />
-                            )}
-                          </button>
-                        </th>
                         <th className="text-center py-3 px-2 font-medium text-gray-700">Actions</th>
                       </tr>
                     </thead>
@@ -720,7 +647,6 @@ export function GeofencingContent() {
                         <BeatTableRow 
                           key={beat.id} 
                           beat={beat} 
-                          violations={violations}
                           onEdit={() => setSelectedBeat(beat)}
                           onView={() => setSelectedBeat(beat)}
                         />
@@ -748,17 +674,13 @@ export function GeofencingContent() {
 // Beat Table Row Component
 function BeatTableRow({ 
   beat, 
-  violations,
   onEdit, 
   onView 
 }: { 
   beat: GeofenceBeat
-  violations: Violation[]
   onEdit: () => void
   onView: () => void 
 }) {
-  const beatViolations = getViolationDetailsForBeat(beat.id, violations)
-  const pendingViolations = beatViolations.filter(v => v.status === 'pending')
   
   return (
     <tr className="border-b border-gray-100 hover:bg-gray-50">
@@ -838,25 +760,6 @@ function BeatTableRow({
         ) : (
           <div className="text-sm text-gray-400">Not scheduled</div>
         )}
-      </td>
-      
-      {/* Violations */}
-      <td className="py-4 px-2">
-        <div>
-          <div className="text-sm font-medium text-gray-900">
-            {beat.violations} total
-          </div>
-          {pendingViolations.length > 0 && (
-            <div className="text-xs text-red-600 mt-1">
-              {pendingViolations.length} pending
-            </div>
-          )}
-          {beatViolations.length > 0 && (
-            <div className="text-xs text-gray-500">
-              Last: {new Date(beatViolations[0].timestamp).toLocaleDateString()}
-            </div>
-          )}
-        </div>
       </td>
       
       {/* Actions */}
@@ -1314,50 +1217,6 @@ function BeatDetailsDialog({
               })}
             </div>
           </div>
-
-          {/* Violations */}
-          {beatViolations.length > 0 && (
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-3">Recent Violations</h3>
-              <div className="space-y-2">
-                {beatViolations.slice(0, 5).map(violation => (
-                  <div key={violation.id} className={`p-3 rounded-lg border ${
-                    violation.status === 'pending' ? 'border-red-200 bg-red-50' :
-                    violation.status === 'acknowledged' ? 'border-orange-200 bg-orange-50' :
-                    'border-green-200 bg-green-50'
-                  }`}>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <XCircle className="h-4 w-4 text-red-500" />
-                          <span className="font-medium text-gray-900">{violation.personnelName}</span>
-                          <Badge className="text-xs">Exit Violation</Badge>
-                        </div>
-                        <p className="text-sm text-gray-600 mt-1">
-                          Exited beat radius at {violation.distanceFromCenter}m from center
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {new Date(violation.timestamp).toLocaleString()}
-                        </p>
-                      </div>
-                      <Badge className={`${
-                        violation.status === 'pending' ? 'bg-red-100 text-red-700' :
-                        violation.status === 'acknowledged' ? 'bg-orange-100 text-orange-700' :
-                        'bg-green-100 text-green-700'
-                      }`}>
-                        {violation.status}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-                {beatViolations.length > 5 && (
-                  <p className="text-sm text-gray-500 text-center">
-                    +{beatViolations.length - 5} more violations
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
         </div>
         
         <div className="flex justify-end space-x-2 pt-4 border-t">
