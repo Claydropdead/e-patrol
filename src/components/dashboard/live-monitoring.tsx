@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 // Mini map component for Live Monitoring
-function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
+function MiniMap({ personnel, beats }: { personnel: PersonnelData[], beats: any[] }) {
   const [isLoaded, setIsLoaded] = useState(false)
   const mapRef = useRef<L.Map | null>(null)
 
@@ -115,7 +115,7 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
     }
   }, [isLoaded])
 
-  // Update markers when personnel data changes
+  // Update markers when personnel data or beats change
   useEffect(() => {
     if (!mapRef.current || !personnel) return
 
@@ -135,35 +135,13 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
 
         // Add markers for personnel - only show on_duty status
         let markersAdded = 0
-        const beatsAdded = new Set<string>() // Track which beats we've already added
 
-        personnel.filter(person => person.status === 'on_duty').forEach((person, index) => {
-          let lat = person.latitude
-          let lng = person.longitude
-          
-          // For testing: Add mock coordinates if none exist
-          if (!lat || !lng) {
-            // Spread personnel across MIMAROPA region
-            const baseCoords = [
-              [13.4, 121.0], // Marinduque area
-              [12.5, 121.7], // Romblon area  
-              [11.5, 120.0], // Palawan north
-              [9.5, 118.7],  // Palawan south
-              [13.2, 120.9], // Occidental Mindoro
-              [13.0, 121.3], // Oriental Mindoro
-            ]
-            const baseIndex = index % baseCoords.length
-            lat = baseCoords[baseIndex][0] + (Math.random() - 0.5) * 0.2
-            lng = baseCoords[baseIndex][1] + (Math.random() - 0.5) * 0.2
-            
-            console.log(`📍 Adding mock coordinates for ${person.full_name}: ${lat}, ${lng}`)
-          }
-
-          // Add beat location marker (center point and radius) if not already added
-          if (person.beat_location && person.beat_name && !beatsAdded.has(person.beat_name)) {
-            const beatLat = person.beat_location.center_lat
-            const beatLng = person.beat_location.center_lng
-            const beatRadius = person.beat_radius || 500
+        // First, add all beats to the map
+        if (beats && beats.length > 0) {
+          beats.forEach((beat) => {
+            const beatLat = beat.center_lat
+            const beatLng = beat.center_lng
+            const beatRadius = beat.radius_meters || 500
 
             // Create beat center marker (blue circle)
             const beatIcon = L.divIcon({
@@ -199,20 +177,43 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
 
             const beatPopupContent = `
               <div style="font-family: system-ui; min-width: 250px;">
-                <h3 style="margin: 0 0 8px 0; font-weight: 600; font-size: 16px; color: #1f2937;">📍 ${person.beat_name}</h3>
+                <h3 style="margin: 0 0 8px 0; font-weight: 600; font-size: 16px; color: #1f2937;">📍 ${beat.name}</h3>
                 <p style="margin: 0 0 4px 0; font-size: 14px; color: #6b7280;"><strong>Beat Center Location</strong></p>
-                <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Unit:</strong> ${person.unit} - ${person.sub_unit}</p>
+                <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Unit:</strong> ${beat.unit} - ${beat.sub_unit}</p>
                 <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Radius:</strong> ${beatRadius}m</p>
-                <p style="margin: 0 0 8px 0; font-size: 13px; color: #374151;">${person.beat_location.description}</p>
+                <p style="margin: 0 0 8px 0; font-size: 13px; color: #374151;">${beat.address || 'Beat area'}</p>
                 <p style="margin: 0; font-size: 12px; color: #9ca3af; font-family: monospace;"><strong>Coordinates:</strong> ${beatLat.toFixed(6)}, ${beatLng.toFixed(6)}</p>
               </div>
             `
 
             beatMarker.bindPopup(beatPopupContent)
             beatCircle.bindPopup(beatPopupContent)
-            beatsAdded.add(person.beat_name)
             
-            console.log(`🎯 Added beat location for ${person.beat_name} at ${beatLat}, ${beatLng}`)
+            console.log(`🎯 Added beat location for ${beat.name} at ${beatLat}, ${beatLng}`)
+          })
+        }
+
+        // Then add personnel markers
+        personnel.filter(person => person.status === 'on_duty').forEach((person, index) => {
+          let lat = person.latitude
+          let lng = person.longitude
+          
+          // For testing: Add mock coordinates if none exist
+          if (!lat || !lng) {
+            // Spread personnel across MIMAROPA region
+            const baseCoords = [
+              [13.4, 121.0], // Marinduque area
+              [12.5, 121.7], // Romblon area  
+              [11.5, 120.0], // Palawan north
+              [9.5, 118.7],  // Palawan south
+              [13.2, 120.9], // Occidental Mindoro
+              [13.0, 121.3], // Oriental Mindoro
+            ]
+            const baseIndex = index % baseCoords.length
+            lat = baseCoords[baseIndex][0] + (Math.random() - 0.5) * 0.2
+            lng = baseCoords[baseIndex][1] + (Math.random() - 0.5) * 0.2
+            
+            console.log(`📍 Adding mock coordinates for ${person.full_name}: ${lat}, ${lng}`)
           }
 
           if (lat && lng) {
@@ -307,7 +308,7 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
     }
 
     updateMarkers()
-  }, [personnel]) // mapRef doesn't need to be in dependencies
+  }, [personnel, beats]) // mapRef doesn't need to be in dependencies
 
   if (!isLoaded) {
     return (
@@ -533,6 +534,7 @@ const mockPersonnelData: PersonnelData[] = [
 
 export function LiveMonitoring() {
   const [personnel, setPersonnel] = useState<PersonnelData[]>([])
+  const [beats, setBeats] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [manualRefreshing, setManualRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -547,22 +549,30 @@ export function LiveMonitoring() {
     try {
       setError(null)
       
-      // Fetch personnel status and locations
-      const [statusResponse, locationsResponse] = await Promise.all([
+      // Fetch personnel status, locations, beat assignments, and all beats
+      const [statusResponse, locationsResponse, beatPersonnelResponse, beatsResponse] = await Promise.all([
         fetch('/api/personnel/status'),
-        fetch('/api/personnel/locations')
+        fetch('/api/personnel/locations'),
+        fetch('/api/beat-personnel'),
+        fetch('/api/beats')
       ])
       
-      if (!statusResponse.ok || !locationsResponse.ok) {
+      if (!statusResponse.ok || !locationsResponse.ok || !beatPersonnelResponse.ok || !beatsResponse.ok) {
         throw new Error('Failed to fetch personnel data')
       }
       
       const statusData = await statusResponse.json()
       const locationData = await locationsResponse.json()
+      const beatPersonnelData = await beatPersonnelResponse.json()
+      const beatsData = await beatsResponse.json()
       
-      // Combine status and location data
+      // Store beats data for map display
+      setBeats(beatsData)
+      
+      // Combine status, location, and beat assignment data
       const combinedData: PersonnelData[] = statusData.map((status: any) => {
         const location = locationData.find((loc: any) => loc.personnel_id === status.personnel_id)
+        const beatAssignment = beatPersonnelData.find((bp: any) => bp.personnel_id === status.personnel_id)
         const personnel = status.personnel
         
         return {
@@ -583,6 +593,14 @@ export function LiveMonitoring() {
             Math.floor((Date.now() - new Date(location.updated_at).getTime()) / (1000 * 60)) : null,
           is_online: !!location && location.updated_at && 
             (Date.now() - new Date(location.updated_at).getTime()) < 15 * 60 * 1000, // 15 minutes
+          // Beat information from beat assignment
+          beat_name: beatAssignment?.beats?.name || null,
+          beat_radius: beatAssignment?.beats?.radius_meters || null,
+          beat_location: beatAssignment?.beats ? {
+            center_lat: beatAssignment.beats.center_lat,
+            center_lng: beatAssignment.beats.center_lng,
+            description: beatAssignment.beats.address || 'Beat area'
+          } : undefined
         }
       })
       
@@ -860,7 +878,10 @@ export function LiveMonitoring() {
                   </div>
                 ) : (
                   <div className="h-full w-full relative">
-                    <MiniMap personnel={filteredPersonnel.filter(p => p.latitude && p.longitude && p.status === 'on_duty')} />
+                    <MiniMap 
+                      personnel={filteredPersonnel.filter(p => p.latitude && p.longitude && p.status === 'on_duty')} 
+                      beats={beats}
+                    />
                     {/* Map Legend */}
                     <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg border p-3 z-[1000]">
                       <h4 className="text-sm font-semibold text-gray-900 mb-2">Map Legend</h4>
