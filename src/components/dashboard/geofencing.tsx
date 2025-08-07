@@ -361,8 +361,9 @@ export function GeofencingContent() {
   const [selectedTab, setSelectedTab] = useState('beats')
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedProvince, setSelectedProvince] = useState('all')
-  const [sortBy, setSortBy] = useState<'name' | 'province' | 'status'>('name')
+  const [selectedUnit, setSelectedUnit] = useState('all')
+  const [selectedSubUnit, setSelectedSubUnit] = useState('all')
+  const [sortBy, setSortBy] = useState<'name' | 'unit' | 'status'>('name')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [isCreateBeatOpen, setIsCreateBeatOpen] = useState(false)
   const [selectedBeat, setSelectedBeat] = useState<GeofenceBeat | null>(null)
@@ -442,15 +443,30 @@ export function GeofencingContent() {
     return () => clearInterval(interval)
   }, [])
 
-  // Get unique provinces from MIMAROPA structure with error handling
-  const provinces = React.useMemo(() => {
+  // Get unique units and sub-units from beats data
+  const units = React.useMemo(() => {
     try {
-      return Object.keys(MIMAROPA_STRUCTURE || {})
+      const uniqueUnits = [...new Set(beats.map(beat => beat.unit))]
+      return uniqueUnits.sort()
     } catch (error) {
-      console.error('Error accessing MIMAROPA_STRUCTURE:', error)
+      console.error('Error getting units:', error)
       return []
     }
-  }, [])
+  }, [beats])
+
+  const subUnits = React.useMemo(() => {
+    try {
+      let filteredBeats = beats
+      if (selectedUnit !== 'all') {
+        filteredBeats = beats.filter(beat => beat.unit === selectedUnit)
+      }
+      const uniqueSubUnits = [...new Set(filteredBeats.map(beat => beat.subUnit))]
+      return uniqueSubUnits.sort()
+    } catch (error) {
+      console.error('Error getting sub-units:', error)
+      return []
+    }
+  }, [beats, selectedUnit])
 
   const filteredBeats = React.useMemo(() => {
     try {
@@ -458,7 +474,8 @@ export function GeofencingContent() {
         const matchesSearch = beat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                              beat.location.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
                              beat.assignedPersonnel.some(person => person.toLowerCase().includes(searchTerm.toLowerCase()))
-        const matchesProvince = selectedProvince === 'all' || beat.province === selectedProvince
+        const matchesUnit = selectedUnit === 'all' || beat.unit === selectedUnit
+        const matchesSubUnit = selectedSubUnit === 'all' || beat.subUnit === selectedSubUnit
         
         // Status filtering
         let matchesStatus = true
@@ -470,7 +487,7 @@ export function GeofencingContent() {
           matchesStatus = beat.beatStatus === 'completed'
         }
         
-        return matchesSearch && matchesProvince && matchesStatus
+        return matchesSearch && matchesUnit && matchesSubUnit && matchesStatus
       })
 
       // Sort beats
@@ -482,9 +499,9 @@ export function GeofencingContent() {
             aValue = a.name.toLowerCase()
             bValue = b.name.toLowerCase()
             break
-          case 'province':
-            aValue = a.province.toLowerCase()
-            bValue = b.province.toLowerCase()
+          case 'unit':
+            aValue = a.unit.toLowerCase()
+            bValue = b.unit.toLowerCase()
             break
           case 'status':
             aValue = a.status
@@ -507,7 +524,7 @@ export function GeofencingContent() {
       console.error('Error filtering beats:', error)
       return beats
     }
-  }, [beats, searchTerm, selectedProvince, statusFilter, sortBy, sortOrder])
+  }, [beats, searchTerm, selectedUnit, selectedSubUnit, statusFilter, sortBy, sortOrder])
 
   return (
     <div className="space-y-6">
@@ -540,15 +557,31 @@ export function GeofencingContent() {
           />
         </div>
         <div className="flex flex-col sm:flex-row gap-2">
-          <Select value={selectedProvince} onValueChange={setSelectedProvince}>
+          <Select value={selectedUnit} onValueChange={(value) => {
+            setSelectedUnit(value)
+            setSelectedSubUnit('all') // Reset sub-unit when unit changes
+          }}>
             <SelectTrigger className="w-full sm:w-48">
-              <SelectValue placeholder="All Provinces" />
+              <SelectValue placeholder="All Units" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Provinces</SelectItem>
-              {provinces.map(province => (
-                <SelectItem key={province} value={province}>
-                  {province}
+              <SelectItem value="all">All Units</SelectItem>
+              {units.map(unit => (
+                <SelectItem key={unit} value={unit}>
+                  {unit}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={selectedSubUnit} onValueChange={setSelectedSubUnit}>
+            <SelectTrigger className="w-full sm:w-48">
+              <SelectValue placeholder="All Sub-Units" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Sub-Units</SelectItem>
+              {subUnits.map(subUnit => (
+                <SelectItem key={subUnit} value={subUnit}>
+                  {subUnit}
                 </SelectItem>
               ))}
             </SelectContent>
