@@ -690,18 +690,21 @@ function BeatTableRow({
           <div className="font-medium text-gray-900">{beat.name}</div>
           <div className="text-sm text-gray-500">{beat.unit} - {beat.subUnit}</div>
           <div className="text-xs text-gray-400">Radius: {beat.radius}m</div>
+          <div className="text-xs text-blue-600 font-mono mt-1">
+            📍 {beat.location.lat.toFixed(6)}, {beat.location.lng.toFixed(6)}
+          </div>
         </div>
       </td>
       
       {/* Location */}
       <td className="py-4 px-2">
         <div>
-          <div className="text-sm text-gray-900">{beat.province}</div>
-          <div className="text-xs text-gray-500 max-w-48 truncate" title={beat.location.address}>
+          <div className="text-sm font-medium text-gray-900">{beat.province}</div>
+          <div className="text-xs text-gray-500 max-w-48 truncate mb-1" title={beat.location.address}>
             {beat.location.address}
           </div>
-          <div className="text-xs text-gray-400 font-mono">
-            {beat.location.lat.toFixed(4)}, {beat.location.lng.toFixed(4)}
+          <div className="text-xs text-blue-600 font-mono bg-blue-50 px-2 py-1 rounded border">
+            📍 {beat.location.lat.toFixed(4)}, {beat.location.lng.toFixed(4)}
           </div>
         </div>
       </td>
@@ -1142,7 +1145,19 @@ function BeatDetailsDialog({
 
           {/* Location Information */}
           <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-3">Location</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-3">Location & Beat Center</h3>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <MapPin className="h-5 w-5 text-blue-600" />
+                <Label className="text-sm font-medium text-blue-800">Beat Center Coordinates</Label>
+              </div>
+              <p className="font-mono text-lg font-bold text-blue-900 mb-1">
+                📍 {beat.location.lat.toFixed(6)}, {beat.location.lng.toFixed(6)}
+              </p>
+              <p className="text-sm text-blue-700">
+                Beat radius: <strong>{beat.radius}m</strong> from this center point
+              </p>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label className="text-sm text-gray-500">Unit</Label>
@@ -1155,12 +1170,6 @@ function BeatDetailsDialog({
               <div className="md:col-span-2">
                 <Label className="text-sm text-gray-500">Address</Label>
                 <p className="text-sm">{beat.location.address}</p>
-              </div>
-              <div className="md:col-span-2">
-                <Label className="text-sm text-gray-500">Coordinates</Label>
-                <p className="font-mono text-sm">
-                  {beat.location.lat}, {beat.location.lng}
-                </p>
               </div>
             </div>
           </div>

@@ -126,15 +126,17 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
       try {
         const L = (await import('leaflet')).default
 
-        // Clear existing markers
+        // Clear existing markers and circles
         mapRef.current?.eachLayer((layer: L.Layer) => {
-          if (layer instanceof L.Marker) {
+          if (layer instanceof L.Marker || layer instanceof L.Circle) {
             mapRef.current?.removeLayer(layer)
           }
         })
 
         // Add markers for personnel - only show on_duty status
         let markersAdded = 0
+        const beatsAdded = new Set<string>() // Track which beats we've already added
+
         personnel.filter(person => person.status === 'on_duty').forEach((person, index) => {
           let lat = person.latitude
           let lng = person.longitude
@@ -155,6 +157,62 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
             lng = baseCoords[baseIndex][1] + (Math.random() - 0.5) * 0.2
             
             console.log(`📍 Adding mock coordinates for ${person.full_name}: ${lat}, ${lng}`)
+          }
+
+          // Add beat location marker (center point and radius) if not already added
+          if (person.beat_location && person.beat_name && !beatsAdded.has(person.beat_name)) {
+            const beatLat = person.beat_location.center_lat
+            const beatLng = person.beat_location.center_lng
+            const beatRadius = person.beat_radius || 500
+
+            // Create beat center marker (blue circle)
+            const beatIcon = L.divIcon({
+              html: `
+                <div style="
+                  background-color: #3b82f6;
+                  width: 12px;
+                  height: 12px;
+                  border-radius: 50%;
+                  border: 2px solid white;
+                  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                  position: relative;
+                  z-index: 999;
+                "></div>
+              `,
+              className: 'beat-center-marker',
+              iconSize: [12, 12],
+              iconAnchor: [6, 6]
+            })
+
+            const beatMarker = L.marker([beatLat, beatLng], { icon: beatIcon })
+              .addTo(mapRef.current!)
+
+            // Add beat radius circle
+            const beatCircle = L.circle([beatLat, beatLng], {
+              radius: beatRadius,
+              color: '#3b82f6',
+              fillColor: '#3b82f6',
+              fillOpacity: 0.1,
+              weight: 2,
+              dashArray: '5, 5'
+            }).addTo(mapRef.current!)
+
+            const beatPopupContent = `
+              <div style="font-family: system-ui; min-width: 250px;">
+                <h3 style="margin: 0 0 8px 0; font-weight: 600; font-size: 16px; color: #1f2937;">📍 ${person.beat_name}</h3>
+                <p style="margin: 0 0 4px 0; font-size: 14px; color: #6b7280;"><strong>Beat Center Location</strong></p>
+                <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Unit:</strong> ${person.unit} - ${person.sub_unit}</p>
+                <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Radius:</strong> ${beatRadius}m</p>
+                <p style="margin: 0 0 8px 0; font-size: 13px; color: #374151;">${person.beat_location.description}</p>
+                <p style="margin: 0; font-size: 12px; color: #9ca3af; font-family: monospace;"><strong>Coordinates:</strong> ${beatLat.toFixed(6)}, ${beatLng.toFixed(6)}</p>
+              </div>
+            `
+
+            beatMarker.bindPopup(beatPopupContent)
+            beatCircle.bindPopup(beatPopupContent)
+            beatsAdded.add(person.beat_name)
+            
+            console.log(`🎯 Added beat location for ${person.beat_name} at ${beatLat}, ${beatLng}`)
           }
 
           if (lat && lng) {
@@ -192,6 +250,7 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
             const beatInfo = person.beat_name && person.status === 'on_duty' ? `
               <div style="margin: 8px 0; padding: 8px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 4px;">
                 <p style="margin: 0 0 4px 0; font-size: 14px; font-weight: 600; color: #1e40af;">📍 ${person.beat_name}</p>
+                <p style="margin: 0 0 2px 0; font-size: 12px; color: #1e40af;">${person.unit} - ${person.sub_unit}</p>
                 <p style="margin: 0 0 2px 0; font-size: 12px; color: #1e40af;">Radius: ${person.beat_radius}m</p>
                 <p style="margin: 0; font-size: 12px; color: #374151;">${person.beat_location?.description}</p>
               </div>
@@ -202,7 +261,7 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
                 <h3 style="margin: 0 0 8px 0; font-weight: 600; font-size: 16px; color: #1f2937;">${person.full_name}</h3>
                 <p style="margin: 0 0 4px 0; font-size: 14px; color: #6b7280;">${person.rank}</p>
                 <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Status:</strong> ${statusBadge}</p>
-                <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Unit:</strong> ${person.sub_unit}</p>
+                <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Unit:</strong> ${person.unit} - ${person.sub_unit}</p>
                 ${beatInfo}
                 <p style="margin: 0; font-size: 12px; color: #9ca3af;">Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}</p>
               </div>
@@ -726,8 +785,26 @@ export function LiveMonitoring() {
                     </div>
                   </div>
                 ) : (
-                  <div className="h-full w-full">
+                  <div className="h-full w-full relative">
                     <MiniMap personnel={filteredPersonnel.filter(p => p.latitude && p.longitude && p.status === 'on_duty')} />
+                    {/* Map Legend */}
+                    <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg border p-3 z-[1000]">
+                      <h4 className="text-sm font-semibold text-gray-900 mb-2">Map Legend</h4>
+                      <div className="space-y-2 text-xs">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 bg-green-500 rounded-full border-2 border-white shadow-sm"></div>
+                          <span className="text-gray-700">Personnel Location</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 bg-blue-500 rounded-full border border-white shadow-sm"></div>
+                          <span className="text-gray-700">Beat Center</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-1 border-2 border-blue-500 border-dashed"></div>
+                          <span className="text-gray-700">Beat Radius</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -909,6 +986,11 @@ export function LiveMonitoring() {
                                   {person.beat_name}
                                 </p>
                                 <p className="text-xs">Radius: {person.beat_radius}m</p>
+                                {person.beat_location && (
+                                  <p className="text-xs font-mono bg-blue-100 px-1 py-0.5 rounded mt-1">
+                                    📍 Beat Center: {person.beat_location.center_lat.toFixed(6)}, {person.beat_location.center_lng.toFixed(6)}
+                                  </p>
+                                )}
                                 <p className="text-xs">{person.beat_location?.description}</p>
                               </div>
                             )}
@@ -924,7 +1006,7 @@ export function LiveMonitoring() {
                                   {statusConfig.label}
                                 </Badge>
                                 <Badge variant={person.is_online ? "default" : "secondary"} className="text-xs">
-                                  {person.is_online ? 'Online' : 'Offline'}
+                                  {person.is_online ? 'Location Sharing' : 'No Location'}
                                 </Badge>
                               </div>
                             </div>
