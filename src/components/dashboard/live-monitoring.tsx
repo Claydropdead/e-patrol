@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -18,8 +18,6 @@ import {
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { supabase } from '@/lib/supabase/client'
-import type { RealtimeChannel } from '@supabase/supabase-js'
 
 // Mini map component for Live Monitoring
 function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
@@ -121,8 +119,8 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
   useEffect(() => {
     if (!mapRef.current || !personnel) return
 
-    console.log('🗺️ Updating map markers for', personnel.length, 'personnel')
-    console.log('📍 Personnel with coordinates:', personnel.filter(p => p.latitude && p.longitude).length)
+    console.log('🗺️ Updating map markers for', personnel.length, 'total personnel')
+    console.log('📍 On-duty personnel with coordinates:', personnel.filter(p => p.latitude && p.longitude && p.status === 'on_duty').length)
 
     const updateMarkers = async () => {
       try {
@@ -135,9 +133,9 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
           }
         })
 
-        // Add markers for personnel - with fallback coordinates for testing
+        // Add markers for personnel - only show on_duty status
         let markersAdded = 0
-        personnel.forEach((person, index) => {
+        personnel.filter(person => person.status === 'on_duty').forEach((person, index) => {
           let lat = person.latitude
           let lng = person.longitude
           
@@ -191,12 +189,21 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
                                person.status === 'standby' ? '🟡 Standby' :
                                person.status === 'on_duty' ? '🟢 On Duty' : '⚫ Off Duty'
 
+            const beatInfo = person.beat_name && person.status === 'on_duty' ? `
+              <div style="margin: 8px 0; padding: 8px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 4px;">
+                <p style="margin: 0 0 4px 0; font-size: 14px; font-weight: 600; color: #1e40af;">📍 ${person.beat_name}</p>
+                <p style="margin: 0 0 2px 0; font-size: 12px; color: #1e40af;">Radius: ${person.beat_radius}m</p>
+                <p style="margin: 0; font-size: 12px; color: #374151;">${person.beat_location?.description}</p>
+              </div>
+            ` : ''
+
             const popupContent = `
               <div style="font-family: system-ui; min-width: 200px;">
                 <h3 style="margin: 0 0 8px 0; font-weight: 600; font-size: 16px; color: #1f2937;">${person.full_name}</h3>
                 <p style="margin: 0 0 4px 0; font-size: 14px; color: #6b7280;">${person.rank}</p>
                 <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Status:</strong> ${statusBadge}</p>
                 <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Unit:</strong> ${person.sub_unit}</p>
+                ${beatInfo}
                 <p style="margin: 0; font-size: 12px; color: #9ca3af;">Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}</p>
               </div>
             `
@@ -210,7 +217,7 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
         // Fit map to show all markers after a short delay
         if (markersAdded > 0) {
           setTimeout(() => {
-            const personnelWithCoords = personnel.map((person, index) => {
+            const personnelWithCoords = personnel.filter(person => person.status === 'on_duty').map((person, index) => {
               let lat = person.latitude
               let lng = person.longitude
               
@@ -254,7 +261,7 @@ function MiniMap({ personnel }: { personnel: PersonnelData[] }) {
   return <div id="mini-map" className="h-full w-full rounded-lg" />
 }
 
-// Types for database data
+// Types for mock data
 interface PersonnelData {
   id: string
   full_name: string
@@ -271,6 +278,14 @@ interface PersonnelData {
   last_update: string | null
   minutes_since_update: number | null
   is_online: boolean
+  // Beat information
+  beat_name?: string
+  beat_radius?: number // in meters
+  beat_location?: {
+    center_lat: number
+    center_lng: number
+    description: string
+  }
 }
 
 type DutyStatus = 'alert' | 'standby' | 'on_duty'
@@ -282,9 +297,184 @@ interface PersonnelStats {
   onDuty: number
 }
 
+// Mock personnel data
+const mockPersonnelData: PersonnelData[] = [
+  {
+    id: '1',
+    full_name: 'PO1 Juan Cruz',
+    rank: 'PO1',
+    email: 'juan.cruz@pnp.gov.ph',
+    province: 'Oriental Mindoro',
+    unit: 'Oriental Mindoro PPO',
+    sub_unit: 'Calapan CPS',
+    status: 'on_duty',
+    status_changed_at: '2024-12-28T08:30:00Z',
+    status_notes: 'On patrol',
+    latitude: 13.4119,
+    longitude: 121.1805,
+    last_update: '2024-12-28T08:30:00Z',
+    minutes_since_update: 5,
+    is_online: true,
+    beat_name: 'Calapan Downtown Beat',
+    beat_radius: 500,
+    beat_location: {
+      center_lat: 13.4119,
+      center_lng: 121.1805,
+      description: 'Central business district including city hall, market area, and main commercial streets'
+    }
+  },
+  {
+    id: '2',
+    full_name: 'PO2 Maria Santos',
+    rank: 'PO2',
+    email: 'maria.santos@pnp.gov.ph',
+    province: 'Oriental Mindoro',
+    unit: 'Oriental Mindoro PPO',
+    sub_unit: 'Baco MPS',
+    status: 'on_duty',
+    status_changed_at: '2024-12-28T08:15:00Z',
+    status_notes: 'Traffic duty',
+    latitude: 13.4125,
+    longitude: 121.1810,
+    last_update: '2024-12-28T08:28:00Z',
+    minutes_since_update: 7,
+    is_online: true,
+    beat_name: 'Baco Highway Beat',
+    beat_radius: 800,
+    beat_location: {
+      center_lat: 13.4125,
+      center_lng: 121.1810,
+      description: 'Major highway intersection with traffic control and vehicle checkpoints'
+    }
+  },
+  {
+    id: '3',
+    full_name: 'SPO1 Carlos Reyes',
+    rank: 'SPO1',
+    email: 'carlos.reyes@pnp.gov.ph',
+    province: 'Palawan',
+    unit: 'Puerto Princesa CPO',
+    sub_unit: 'Airport Security',
+    status: 'alert',
+    status_changed_at: '2024-12-28T08:00:00Z',
+    status_notes: 'Emergency response',
+    latitude: 9.7419,
+    longitude: 118.7591,
+    last_update: '2024-12-28T08:25:00Z',
+    minutes_since_update: 10,
+    is_online: true
+  },
+  {
+    id: '4',
+    full_name: 'PO1 Roberto Garcia',
+    rank: 'PO1',
+    email: 'roberto.garcia@pnp.gov.ph',
+    province: 'Marinduque',
+    unit: 'Marinduque PPO',
+    sub_unit: 'Boac MPS',
+    status: 'standby',
+    status_changed_at: '2024-12-28T07:45:00Z',
+    status_notes: 'Station duty',
+    latitude: 13.4526,
+    longitude: 121.8427,
+    last_update: '2024-12-28T08:20:00Z',
+    minutes_since_update: 15,
+    is_online: true
+  },
+  {
+    id: '5',
+    full_name: 'PO2 Lisa Morales',
+    rank: 'PO2',
+    email: 'lisa.morales@pnp.gov.ph',
+    province: 'Romblon',
+    unit: 'Romblon PPO',
+    sub_unit: 'Romblon MPS',
+    status: 'on_duty',
+    status_changed_at: '2024-12-28T07:30:00Z',
+    status_notes: 'Harbor patrol',
+    latitude: 12.5808,
+    longitude: 122.2691,
+    last_update: '2024-12-28T08:15:00Z',
+    minutes_since_update: 20,
+    is_online: true,
+    beat_name: 'Romblon Port Beat',
+    beat_radius: 600,
+    beat_location: {
+      center_lat: 12.5808,
+      center_lng: 122.2691,
+      description: 'Port area including ferry terminal, cargo facilities, and waterfront security'
+    }
+  },
+  {
+    id: '6',
+    full_name: 'PO3 Mark Santos',
+    rank: 'PO3',
+    email: 'mark.santos@pnp.gov.ph',
+    province: 'Occidental Mindoro',
+    unit: 'Occidental Mindoro PPO',
+    sub_unit: 'Mamburao MPS',
+    status: 'on_duty',
+    status_changed_at: '2024-12-28T07:00:00Z',
+    status_notes: 'Road patrol',
+    latitude: 13.2200,
+    longitude: 120.6089,
+    last_update: '2024-12-28T08:10:00Z',
+    minutes_since_update: 25,
+    is_online: true,
+    beat_name: 'Mamburao Coastal Beat',
+    beat_radius: 900,
+    beat_location: {
+      center_lat: 13.2200,
+      center_lng: 120.6089,
+      description: 'Coastal highway patrol covering main road network and beach area security'
+    }
+  },
+  {
+    id: '7',
+    full_name: 'SPO2 Elena Cruz',
+    rank: 'SPO2',
+    email: 'elena.cruz@pnp.gov.ph',
+    province: 'Palawan',
+    unit: 'Palawan PPO',
+    sub_unit: 'Brookes Point MPS',
+    status: 'alert',
+    status_changed_at: '2024-12-28T06:45:00Z',
+    status_notes: 'Incident response',
+    latitude: 8.7833,
+    longitude: 117.8333,
+    last_update: '2024-12-28T08:05:00Z',
+    minutes_since_update: 30,
+    is_online: false
+  },
+  {
+    id: '8',
+    full_name: 'PO1 Jose Reyes',
+    rank: 'PO1',
+    email: 'jose.reyes@pnp.gov.ph',
+    province: 'Romblon',
+    unit: 'Romblon PPO',
+    sub_unit: 'Odiongan MPS',
+    status: 'on_duty',
+    status_changed_at: '2024-12-28T06:30:00Z',
+    status_notes: 'Community patrol',
+    latitude: 12.4028,
+    longitude: 121.9694,
+    last_update: '2024-12-28T08:00:00Z',
+    minutes_since_update: 35,
+    is_online: true,
+    beat_name: 'Odiongan Town Center Beat',
+    beat_radius: 750,
+    beat_location: {
+      center_lat: 12.4028,
+      center_lng: 121.9694,
+      description: 'Town center including municipal hall, church, school zone, and residential areas'
+    }
+  }
+]
+
 export function LiveMonitoring() {
-  const [personnel, setPersonnel] = useState<PersonnelData[]>([])
-  const [loading, setLoading] = useState(true)
+  const [personnel, setPersonnel] = useState<PersonnelData[]>(mockPersonnelData)
+  const [loading, setLoading] = useState(false)
   const [manualRefreshing, setManualRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<DutyStatus | 'all'>('all')
@@ -292,258 +482,21 @@ export function LiveMonitoring() {
   const [subUnitFilter, setSubUnitFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [lastUpdate, setLastUpdate] = useState(new Date())
-  const loadingRef = useRef(false)
-  const lastFetchRef = useRef<number>(0)
-  
-  // Generate mock coordinates based on province and unit
-  const generateMockCoordinates = (province: string, unit: string, index: number) => {
-    const provinceCoords: Record<string, [number, number]> = {
-      'Marinduque': [13.4, 121.0],
-      'Romblon': [12.5, 121.7],
-      'Palawan': [10.5, 119.0],
-      'Occidental Mindoro': [13.2, 120.9],
-      'Oriental Mindoro': [13.0, 121.3],
-    }
-    
-    // Default to center of MIMAROPA if province not found
-    const baseCoords = provinceCoords[province] || [12.0, 120.5]
-    
-    // Add small random offset based on index to spread out markers
-    const offsetLat = (Math.sin(index * 2.5) * 0.3) + ((index % 5) - 2) * 0.1
-    const offsetLng = (Math.cos(index * 1.8) * 0.4) + ((index % 7) - 3) * 0.1
-    
-    return {
-      lat: baseCoords[0] + offsetLat,
-      lng: baseCoords[1] + offsetLng
-    }
-  }
-  
-  // Use singleton supabase instance to prevent multiple GoTrueClient warnings
 
-  // Fetch personnel data from database
-  const fetchPersonnelData = useCallback(async () => {
-    // Prevent multiple concurrent fetches
-    if (loadingRef.current) {
-      console.log('🔄 Fetch already in progress, skipping...')
-      return
-    }
-
-    // Prevent rapid successive fetches (debounce)
-    const now = Date.now()
-    if (now - lastFetchRef.current < 2000) { // 2 second debounce
-      console.log('⏱️ Fetch too soon after last fetch, skipping...')
-      return
-    }
-    lastFetchRef.current = now
-
-    try {
-      setLoading(true)
-      loadingRef.current = true
-      setError(null)
-      
-      console.log('🔍 Fetching personnel data from live_monitoring view...')
-      
-      // Try to fetch from live_monitoring view first
-      const { data, error } = await supabase
-        .from('live_monitoring')
-        .select('*')
-        .order('full_name')
-      
-      console.log('📊 Live monitoring query result:', { data, error })
-      
-      // If live_monitoring view doesn't exist, fall back to basic personnel table
-      if (error && (error.message.includes('relation "live_monitoring" does not exist') || 
-                   error.message.includes('does not exist') ||
-                   error.code === 'PGRST116')) {
-        console.log('⚠️ Live monitoring view not found, trying personnel table...')
-        
-        // Try to fetch from personnel table instead
-        const { data: personnelData, error: personnelError } = await supabase
-          .from('personnel')
-          .select('id, full_name, rank, email, province, unit, sub_unit, is_active')
-          .eq('is_active', true)
-          .order('full_name')
-        
-        console.log('📊 Personnel query result:', { data: personnelData, error: personnelError })
-        
-        if (personnelError) {
-          console.error('❌ Personnel table also not accessible:', personnelError)
-          setError('Unable to access personnel data. Please check your database connection.')
-          return
-        }
-        
-        // Use personnel data with mock coordinates for visualization
-        const transformedData: PersonnelData[] = (personnelData || []).map((person, index) => {
-          // Generate mock coordinates based on their province/unit for visualization
-          const mockCoords = generateMockCoordinates(person.province, person.unit, index)
-          
-          return {
-            ...person,
-            status: 'on_duty' as DutyStatus, // Changed from 'off_duty' for better visualization
-            status_changed_at: new Date().toISOString(),
-            status_notes: 'Mock status for testing',
-            latitude: mockCoords.lat,
-            longitude: mockCoords.lng,
-            last_update: new Date().toISOString(),
-            minutes_since_update: Math.floor(Math.random() * 120), // Random 0-120 minutes
-            is_online: Math.random() > 0.3 // 70% chance of being online
-          }
-        })
-        
-        console.log('✅ Using personnel data with mock coordinates:', transformedData.length, 'records')
-        console.log('📍 Mock coordinates generated for visualization')
-        setPersonnel(transformedData)
-        setLastUpdate(new Date())
-        return
-      } else if (error) {
-        console.error('❌ Error fetching personnel:', error)
-        setError(`Failed to load personnel data: ${error.message}`)
-        return
-      }
-      
-      console.log('✅ Live monitoring data loaded:', data?.length || 0, 'records')
-      
-      // Add debugging for location data
-      if (data && data.length > 0) {
-        const withCoords = data.filter(p => p.latitude && p.longitude).length
-        const withoutCoords = data.length - withCoords
-        console.log(`📍 Location data: ${withCoords} with coordinates, ${withoutCoords} without`)
-        
-        // Log first few records to see data structure
-        console.log('📋 Sample data structure:', data.slice(0, 2))
-      }
-      
-      setPersonnel(data || [])
-      setLastUpdate(new Date())
-    } catch (err) {
-      console.error('❌ Fetch error:', err)
-      setError('Failed to connect to database. Please check your connection and try again.')
-    } finally {
-      setLoading(false)
-      loadingRef.current = false
-      console.log('✅ Data fetch completed')
-    }
-  }, []) // Empty dependency array for useCallback
-
-  // Set up real-time subscriptions with error handling and timeout
+  // Simulate real-time updates
   useEffect(() => {
-    // Prevent multiple subscriptions
-    let isMounted = true
-    let hasInitiallyFetched = false
-    
-    console.log('🔧 Live monitoring useEffect triggered')
-    
-    // Initial data fetch - only once and with delay
-    const initialFetch = async () => {
-      if (!hasInitiallyFetched && isMounted && !loadingRef.current) {
-        hasInitiallyFetched = true
-        console.log('🚀 Starting initial data fetch...')
-        await fetchPersonnelData()
-      } else {
-        console.log('⏭️ Skipping initial fetch - already in progress or completed')
-      }
-    }
-    
-    // Small delay to prevent rapid re-fetching
-    const fetchTimeout = setTimeout(initialFetch, 100)
+    const interval = setInterval(() => {
+      setPersonnel(prev => prev.map(person => ({
+        ...person,
+        minutes_since_update: (person.minutes_since_update || 0) + 1,
+        is_online: Math.random() > 0.1, // 90% chance of staying online
+        last_update: person.last_update // Keep original update time
+      })))
+      setLastUpdate(new Date())
+    }, 60000) // Update every minute
 
-    // Set a timeout to ensure loading doesn't get stuck
-    const loadingTimeout = setTimeout(() => {
-      if (loadingRef.current && isMounted) {
-        console.log('Loading timeout reached, stopping loading state')
-        setLoading(false)
-        loadingRef.current = false
-        setError('Connection timeout. Your network might be slow. Try refreshing the page.')
-      }
-    }, 8000) // Increased to 8 seconds for slower connections
-
-    let locationsChannel: RealtimeChannel | null = null
-    let statusChannel: RealtimeChannel | null = null
-
-    const setupSubscriptions = async () => {
-      try {
-        // Check if personnel_locations table exists before subscribing
-        const { error: locationError } = await supabase
-          .from('personnel_locations')
-          .select('id')
-          .limit(1)
-        
-        if (!locationError) {
-          // Subscribe to real-time location changes
-          locationsChannel = supabase
-            .channel('personnel-locations')
-            .on(
-              'postgres_changes',
-              {
-                event: '*',
-                schema: 'public',
-                table: 'personnel_locations'
-              },
-              () => {
-                // Only refetch if not currently loading to prevent loops
-                if (!loadingRef.current) {
-                  console.log('🔄 Location change detected, refreshing data...')
-                  fetchPersonnelData()
-                }
-              }
-            )
-            .subscribe()
-        } else {
-          console.log('personnel_locations table not available for real-time updates')
-        }
-
-        // Check if personnel_status_history table exists before subscribing
-        const { error: statusError } = await supabase
-          .from('personnel_status_history')
-          .select('id')
-          .limit(1)
-        
-        if (!statusError) {
-          statusChannel = supabase
-            .channel('personnel-status')
-            .on(
-              'postgres_changes',
-              {
-                event: '*',
-                schema: 'public',
-                table: 'personnel_status_history'
-              },
-              () => {
-                // Only refetch if not currently loading to prevent loops
-                if (!loadingRef.current) {
-                  console.log('🔄 Status change detected, refreshing data...')
-                  fetchPersonnelData()
-                }
-              }
-            )
-            .subscribe()
-        } else {
-          console.log('personnel_status_history table not available for real-time updates')
-        }
-        
-      } catch (error) {
-        console.log('Real-time subscriptions setup failed:', error)
-        // Continue without real-time updates
-      }
-    }
-
-    // Set up subscriptions asynchronously
-    setupSubscriptions()
-
-    // Cleanup subscriptions
-    return () => {
-      console.log('🧹 Cleaning up live monitoring subscriptions...')
-      isMounted = false
-      clearTimeout(fetchTimeout)
-      clearTimeout(loadingTimeout)
-      if (locationsChannel) {
-        supabase.removeChannel(locationsChannel)
-      }
-      if (statusChannel) {
-        supabase.removeChannel(statusChannel)
-      }
-    }
-  }, [fetchPersonnelData]) // Add fetchPersonnelData to dependencies
+    return () => clearInterval(interval)
+  }, [])
 
   // Calculate statistics
   const stats: PersonnelStats = {
@@ -555,7 +508,6 @@ export function LiveMonitoring() {
 
   // Filter personnel based on current filters
   const filteredPersonnel = personnel.filter(person => {
-    // Ensure person has required fields
     if (!person || !person.id || !person.full_name) return false
     
     const matchesStatus = statusFilter === 'all' || person.status === statusFilter
@@ -573,7 +525,7 @@ export function LiveMonitoring() {
   const units = [...new Set(personnel.map(p => p.unit).filter(Boolean))]
   const subUnits = [...new Set(personnel.map(p => p.sub_unit).filter(Boolean))]
 
-  // Get all available units (no province filtering)
+  // Get all available units
   const availableUnits = units
 
   // Get sub-units filtered by selected unit only
@@ -623,54 +575,70 @@ export function LiveMonitoring() {
     }
   }
 
-  // Manual refresh function that resets loading state
+  // Manual refresh function (mock)
   const handleManualRefresh = async () => {
-    // Prevent rapid clicking
-    if (loadingRef.current || manualRefreshing) {
-      console.log('🔄 Refresh already in progress, ignoring...')
-      return
-    }
+    if (manualRefreshing) return
     
-    // Check if it's too soon after last fetch (respect debounce)
-    const now = Date.now()
-    if (now - lastFetchRef.current < 1000) { // 1 second minimum between manual refreshes
-      console.log('⏱️ Manual refresh too soon, please wait...')
-      return
-    }
-    
-    console.log('🔄 Manual refresh triggered')
-    
-    // Set manual refresh state
     setManualRefreshing(true)
     setError(null)
     
-    // Update last fetch time to prevent rapid successive calls
-    lastFetchRef.current = now
-    
-    // Small delay to ensure UI updates, then fetch
-    setTimeout(async () => {
-      try {
-        await fetchPersonnelData()
-        setLastUpdate(new Date()) // Update the last update time
-      } catch (error) {
-        console.error('❌ Manual refresh failed:', error)
-        setError('Refresh failed. Please try again.')
-        setLoading(false)
-        loadingRef.current = false
-      } finally {
-        setManualRefreshing(false)
-      }
-    }, 300) // Slightly longer delay for better visual feedback
-  }
+    // Simulate loading delay
+    setTimeout(() => {
+      // Simulate some random status changes
+      setPersonnel(prev => prev.map(person => {
+        const shouldChangeStatus = Math.random() > 0.8 // 20% chance
+        if (shouldChangeStatus) {
+          const statuses = ['alert', 'standby', 'on_duty']
+          const currentIndex = statuses.indexOf(person.status)
+          const newStatus = statuses[(currentIndex + 1) % statuses.length]
+          
+          // Define beat assignments for when personnel go on duty
+          const beatAssignments: Record<string, { name: string, radius: number, description: string }> = {
+            '1': { name: 'Calapan Downtown Beat', radius: 500, description: 'Central business district including city hall, market area, and main commercial streets' },
+            '2': { name: 'Baco Highway Beat', radius: 800, description: 'Major highway intersection with traffic control and vehicle checkpoints' },
+            '3': { name: 'Airport Security Perimeter', radius: 1000, description: 'Airport terminal and runway security with passenger screening areas' },
+            '4': { name: 'Boac Municipal Beat', radius: 550, description: 'Municipal center including government offices and public market area' },
+            '5': { name: 'Romblon Port Beat', radius: 600, description: 'Port area including ferry terminal, cargo facilities, and waterfront security' },
+            '6': { name: 'Mamburao Coastal Beat', radius: 900, description: 'Coastal highway patrol covering main road network and beach area security' },
+            '7': { name: 'Brookes Point Border Beat', radius: 750, description: 'Border security and checkpoint operations with rural patrol areas' },
+            '8': { name: 'Odiongan Town Center Beat', radius: 750, description: 'Town center including municipal hall, church, school zone, and residential areas' }
+          }
 
-  // Auto-refresh every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
+          const updatedPerson = {
+            ...person,
+            status: newStatus,
+            status_changed_at: new Date().toISOString(),
+            minutes_since_update: 0
+          }
+
+          // Add or remove beat information based on new status
+          if (newStatus === 'on_duty' && person.latitude && person.longitude) {
+            const beatInfo = beatAssignments[person.id]
+            if (beatInfo) {
+              updatedPerson.beat_name = beatInfo.name
+              updatedPerson.beat_radius = beatInfo.radius
+              updatedPerson.beat_location = {
+                center_lat: person.latitude,
+                center_lng: person.longitude,
+                description: beatInfo.description
+              }
+            }
+          } else if (newStatus !== 'on_duty') {
+            // Remove beat information when not on duty
+            delete updatedPerson.beat_name
+            delete updatedPerson.beat_radius
+            delete updatedPerson.beat_location
+          }
+
+          return updatedPerson
+        }
+        return person
+      }))
+      
       setLastUpdate(new Date())
-    }, 30000)
-    
-    return () => clearInterval(interval)
-  }, [])
+      setManualRefreshing(false)
+    }, 1000)
+  }
 
   return (
     <div className="space-y-6">
@@ -759,7 +727,7 @@ export function LiveMonitoring() {
                   </div>
                 ) : (
                   <div className="h-full w-full">
-                    <MiniMap personnel={filteredPersonnel.filter(p => p.latitude && p.longitude)} />
+                    <MiniMap personnel={filteredPersonnel.filter(p => p.latitude && p.longitude && p.status === 'on_duty')} />
                   </div>
                 )}
               </div>
@@ -774,7 +742,7 @@ export function LiveMonitoring() {
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center">
                   <Users className="h-5 w-5 mr-2" />
-                  Personnel Status
+                  Personnel Live Location Tracking
                 </CardTitle>
                 <div className="flex items-center space-x-2">
                   <span className="text-xs text-gray-500">
@@ -934,6 +902,16 @@ export function LiveMonitoring() {
                           <div className="mt-2 text-xs text-gray-600">
                             <p className="font-medium">{person.unit}</p>
                             <p className="text-gray-500">{person.sub_unit}</p>
+                            {person.beat_name && person.status === 'on_duty' && (
+                              <div className="mt-1 p-2 bg-blue-50 border border-blue-200 rounded text-blue-700">
+                                <p className="font-semibold flex items-center gap-1">
+                                  <MapPin className="h-3 w-3" />
+                                  {person.beat_name}
+                                </p>
+                                <p className="text-xs">Radius: {person.beat_radius}m</p>
+                                <p className="text-xs">{person.beat_location?.description}</p>
+                              </div>
+                            )}
                             <div className="flex items-center justify-between mt-1">
                               <span>
                                 {person.last_update 

@@ -50,7 +50,7 @@ interface GeofenceBeat {
   // New duty and acceptance fields
   dutyStartTime?: string
   dutyEndTime?: string
-  beatStatus: 'pending' | 'accepted' | 'declined' | 'in_progress' | 'completed'
+  beatStatus: 'pending' | 'on_duty' | 'completed'
   acceptanceTime?: string
   declineReason?: string
   // Personnel acceptance tracking
@@ -102,9 +102,9 @@ const mockBeats: GeofenceBeat[] = [
     createdAt: '2024-01-15',
     violations: 1,
     lastActivity: 'Just now',
-    dutyStartTime: '06:00',
-    dutyEndTime: '18:00',
-    beatStatus: 'in_progress',
+    dutyStartTime: '00:00',
+    dutyEndTime: '23:59',
+    beatStatus: 'on_duty',
     acceptanceTime: 'Dec 28, 05:45 AM',
     personnelAcceptance: {
       'PO1 Juan Cruz': { status: 'accepted', timestamp: 'Dec 28, 05:40 AM' },
@@ -128,9 +128,9 @@ const mockBeats: GeofenceBeat[] = [
     createdAt: '2024-02-01',
     violations: 0,
     lastActivity: '30 minutes ago',
-    dutyStartTime: '08:00',
-    dutyEndTime: '20:00',
-    beatStatus: 'in_progress',
+    dutyStartTime: '00:00',
+    dutyEndTime: '23:59',
+    beatStatus: 'on_duty',
     acceptanceTime: 'Dec 28, 07:45 AM',
     personnelAcceptance: {
       'SPO1 Carlos Reyes': { status: 'accepted', timestamp: 'Dec 28, 07:30 AM' },
@@ -154,9 +154,9 @@ const mockBeats: GeofenceBeat[] = [
     createdAt: '2024-01-20',
     violations: 0,
     lastActivity: '2 hours ago',
-    dutyStartTime: '07:00',
-    dutyEndTime: '19:00',
-    beatStatus: 'accepted',
+    dutyStartTime: '00:00',
+    dutyEndTime: '23:59',
+    beatStatus: 'completed',
     acceptanceTime: 'Dec 28, 06:30 AM',
     personnelAcceptance: {
       'PO1 Roberto Garcia': { status: 'accepted', timestamp: 'Dec 28, 06:30 AM' }
@@ -179,9 +179,9 @@ const mockBeats: GeofenceBeat[] = [
     createdAt: '2024-02-10',
     violations: 2,
     lastActivity: '1 hour ago',
-    dutyStartTime: '06:00',
-    dutyEndTime: '18:00',
-    beatStatus: 'accepted',
+    dutyStartTime: '00:00',
+    dutyEndTime: '23:59',
+    beatStatus: 'pending',
     acceptanceTime: 'Pending full acceptance',
     personnelAcceptance: {
       'PO2 Lisa Morales': { status: 'accepted', timestamp: 'Dec 28, 05:30 AM' },
@@ -254,10 +254,8 @@ const getStatusColor = (status: string) => {
 const getBeatStatusColor = (status: string) => {
   switch (status) {
     case 'pending': return 'bg-yellow-100 text-yellow-800'
-    case 'accepted': return 'bg-green-100 text-green-800'
-    case 'declined': return 'bg-red-100 text-red-800'
-    case 'in_progress': return 'bg-blue-100 text-blue-800'
-    case 'completed': return 'bg-purple-100 text-purple-800'
+    case 'on_duty': return 'bg-blue-100 text-blue-800'
+    case 'completed': return 'bg-green-100 text-green-800'
     default: return 'bg-gray-100 text-gray-800'
   }
 }
@@ -265,9 +263,7 @@ const getBeatStatusColor = (status: string) => {
 const getBeatStatusIcon = (status: string) => {
   switch (status) {
     case 'pending': return <Timer className="h-4 w-4" />
-    case 'accepted': return <UserCheck className="h-4 w-4" />
-    case 'declined': return <UserX className="h-4 w-4" />
-    case 'in_progress': return <Activity className="h-4 w-4" />
+    case 'on_duty': return <Activity className="h-4 w-4" />
     case 'completed': return <CheckCircle className="h-4 w-4" />
     default: return <Clock className="h-4 w-4" />
   }
@@ -275,6 +271,11 @@ const getBeatStatusIcon = (status: string) => {
 
 const formatDutyTime = (startTime?: string, endTime?: string) => {
   if (!startTime) return 'Not scheduled'
+  
+  // Special case for 24-hour duty
+  if (startTime === '00:00' && endTime === '23:59') {
+    return '24-Hour Duty'
+  }
   
   // Handle simple time format (HH:MM)
   const formatTime = (timeStr: string) => {
@@ -320,6 +321,11 @@ const calculateDutyDuration = (startTime?: string, endTime?: string) => {
     
     const startMinutes = startHour * 60 + startMin
     let endMinutes = endHour * 60 + endMin
+    
+    // Special case for 24-hour duty (00:00 to 23:59)
+    if (startTime === '00:00' && endTime === '23:59') {
+      return '24h 0m'
+    }
     
     // Handle overnight shifts
     if (endMinutes <= startMinutes) {
@@ -382,7 +388,7 @@ export function GeofencingContent() {
       // Simulate random radius exit detection for notification purposes
       if (Math.random() > 0.95) { // Reduced frequency since it's only for exit notifications
         setBeats(currentBeats => {
-          const activeBeat = currentBeats.find(b => b.beatStatus === 'in_progress')
+          const activeBeat = currentBeats.find(b => b.beatStatus === 'on_duty')
           if (activeBeat && activeBeat.assignedPersonnel.length > 0) {
             // Calculate a position outside the beat radius
             const radiusInDegrees = activeBeat.radius / 111000 // Rough conversion to degrees
@@ -456,12 +462,12 @@ export function GeofencingContent() {
         
         // Status filtering
         let matchesStatus = true
-        if (statusFilter === 'active') {
-          matchesStatus = beat.status === 'active'
-        } else if (statusFilter === 'on-duty') {
-          matchesStatus = beat.beatStatus === 'in_progress'
+        if (statusFilter === 'on-duty') {
+          matchesStatus = beat.beatStatus === 'on_duty'
         } else if (statusFilter === 'pending') {
           matchesStatus = beat.beatStatus === 'pending'
+        } else if (statusFilter === 'completed') {
+          matchesStatus = beat.beatStatus === 'completed'
         }
         
         return matchesSearch && matchesProvince && matchesStatus
@@ -606,9 +612,9 @@ export function GeofencingContent() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Beats</SelectItem>
-              <SelectItem value="active">Active Only</SelectItem>
-              <SelectItem value="on-duty">On Duty</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="on-duty">On Duty</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -676,7 +682,7 @@ export function GeofencingContent() {
                               }
                             }}
                           >
-                            Status
+                            Beat Status
                             {sortBy === 'status' && (
                               sortOrder === 'asc' ? 
                                 <ChevronUp className="h-4 w-4" /> : 
@@ -780,16 +786,11 @@ function BeatTableRow({
       
       {/* Status */}
       <td className="py-4 px-2">
-        <div className="space-y-1">
-          <Badge className={`${getStatusColor(beat.status)} border-0 text-xs`}>
-            {beat.status}
+        <div>
+          <Badge className={`${getBeatStatusColor(beat.beatStatus)} border-0 flex items-center gap-1 text-xs w-fit`}>
+            {getBeatStatusIcon(beat.beatStatus)}
+            {beat.beatStatus === 'on_duty' ? 'On Duty' : beat.beatStatus.charAt(0).toUpperCase() + beat.beatStatus.slice(1)}
           </Badge>
-          <div>
-            <Badge className={`${getBeatStatusColor(beat.beatStatus)} border-0 flex items-center gap-1 text-xs w-fit`}>
-              {getBeatStatusIcon(beat.beatStatus)}
-              {beat.beatStatus.replace('_', ' ')}
-            </Badge>
-          </div>
         </div>
       </td>
       
@@ -833,9 +834,6 @@ function BeatTableRow({
             <div className="text-xs text-gray-500">
               Duration: {calculateDutyDuration(beat.dutyStartTime, beat.dutyEndTime)}
             </div>
-            {beat.beatStatus === 'in_progress' && (
-              <div className="text-xs text-green-600 mt-1">● Active</div>
-            )}
           </div>
         ) : (
           <div className="text-sm text-gray-400">Not scheduled</div>
@@ -1218,21 +1216,13 @@ function BeatDetailsDialog({
           {/* Basic Information */}
           <div>
             <h3 className="text-lg font-medium text-gray-900 mb-3">Basic Information</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div>
-                <Label className="text-sm text-gray-500">Status</Label>
-                <div className="mt-1">
-                  <Badge className={`${getStatusColor(beat.status)} border-0`}>
-                    {beat.status}
-                  </Badge>
-                </div>
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <Label className="text-sm text-gray-500">Beat Status</Label>
                 <div className="mt-1">
                   <Badge className={`${getBeatStatusColor(beat.beatStatus)} border-0 flex items-center gap-1 w-fit`}>
                     {getBeatStatusIcon(beat.beatStatus)}
-                    {beat.beatStatus.replace('_', ' ')}
+                    {beat.beatStatus === 'on_duty' ? 'On Duty' : beat.beatStatus.charAt(0).toUpperCase() + beat.beatStatus.slice(1)}
                   </Badge>
                 </div>
               </div>
@@ -1250,11 +1240,7 @@ function BeatDetailsDialog({
           {/* Location Information */}
           <div>
             <h3 className="text-lg font-medium text-gray-900 mb-3">Location</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label className="text-sm text-gray-500">Province</Label>
-                <p className="font-medium">{beat.province}</p>
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label className="text-sm text-gray-500">Unit</Label>
                 <p className="font-medium">{beat.unit}</p>
@@ -1267,7 +1253,7 @@ function BeatDetailsDialog({
                 <Label className="text-sm text-gray-500">Address</Label>
                 <p className="text-sm">{beat.location.address}</p>
               </div>
-              <div>
+              <div className="md:col-span-2">
                 <Label className="text-sm text-gray-500">Coordinates</Label>
                 <p className="font-mono text-sm">
                   {beat.location.lat}, {beat.location.lng}
@@ -1281,7 +1267,7 @@ function BeatDetailsDialog({
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-3">Duty Schedule</h3>
               <div className="bg-blue-50 rounded-lg p-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-sm text-blue-700">Schedule</Label>
                     <p className="font-medium text-blue-900">
@@ -1292,12 +1278,6 @@ function BeatDetailsDialog({
                     <Label className="text-sm text-blue-700">Duration</Label>
                     <p className="font-medium text-blue-900">
                       {calculateDutyDuration(beat.dutyStartTime, beat.dutyEndTime)}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-sm text-blue-700">Status</Label>
-                    <p className="font-medium text-blue-900">
-                      {beat.beatStatus === 'in_progress' ? 'Active' : 'Inactive'}
                     </p>
                   </div>
                 </div>
