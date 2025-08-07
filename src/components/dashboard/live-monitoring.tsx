@@ -145,18 +145,61 @@ function MiniMap({ personnel, beats, onMapReady }: {
         // Add markers for personnel - only show on_duty status
         let markersAdded = 0
 
-        // First, add all beats to the map
+        // First, add all beats to the map with dynamic coloring based on personnel compliance
         if (beats && beats.length > 0) {
           beats.forEach((beat) => {
             const beatLat = beat.center_lat
             const beatLng = beat.center_lng
             const beatRadius = beat.radius_meters || 500
 
-            // Create beat center marker (blue circle)
+            // Check if any on-duty personnel assigned to this beat are outside the radius
+            const assignedPersonnel = personnel.filter(person => 
+              person.status === 'on_duty' && 
+              person.beat_location &&
+              person.beat_location.center_lat === beatLat &&
+              person.beat_location.center_lng === beatLng
+            )
+
+            let isViolated = false
+            let violatingPersonnel: any[] = []
+            
+            if (assignedPersonnel.length > 0) {
+              // Check if any assigned personnel are outside the beat radius and collect them
+              assignedPersonnel.forEach(person => {
+                if (!person.latitude || !person.longitude) return
+                
+                // Calculate distance between personnel and beat center
+                const R = 6371e3; // Earth's radius in meters
+                const φ1 = (beatLat * Math.PI) / 180
+                const φ2 = (person.latitude * Math.PI) / 180
+                const Δφ = ((person.latitude - beatLat) * Math.PI) / 180
+                const Δλ = ((person.longitude - beatLng) * Math.PI) / 180
+
+                const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                         Math.cos(φ1) * Math.cos(φ2) *
+                         Math.sin(Δλ/2) * Math.sin(Δλ/2)
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+                const distance = R * c
+
+                if (distance > beatRadius) {
+                  isViolated = true
+                  violatingPersonnel.push({
+                    ...person,
+                    distance: Math.round(distance)
+                  })
+                }
+              })
+            }
+
+            // Dynamic colors based on compliance
+            const beatColor = isViolated ? '#ef4444' : '#3b82f6' // Red if violated, blue if compliant
+            const statusText = isViolated ? 'PERSONNEL OUT OF BOUNDS' : 'COMPLIANT'
+
+            // Create beat center marker (blue circle or red if violated)
             const beatIcon = L.divIcon({
               html: `
                 <div style="
-                  background-color: #3b82f6;
+                  background-color: ${beatColor};
                   width: 12px;
                   height: 12px;
                   border-radius: 50%;
@@ -174,13 +217,13 @@ function MiniMap({ personnel, beats, onMapReady }: {
             const beatMarker = L.marker([beatLat, beatLng], { icon: beatIcon })
               .addTo(mapRef.current!)
 
-            // Add beat radius circle
+            // Add beat radius circle with dynamic color
             const beatCircle = L.circle([beatLat, beatLng], {
               radius: beatRadius,
-              color: '#3b82f6',
-              fillColor: '#3b82f6',
-              fillOpacity: 0.1,
-              weight: 2,
+              color: beatColor,
+              fillColor: beatColor,
+              fillOpacity: isViolated ? 0.15 : 0.1,
+              weight: isViolated ? 3 : 2,
               dashArray: '5, 5'
             }).addTo(mapRef.current!)
 
@@ -191,6 +234,23 @@ function MiniMap({ personnel, beats, onMapReady }: {
                 <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Unit:</strong> ${beat.unit} - ${beat.sub_unit}</p>
                 <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Radius:</strong> ${beatRadius}m</p>
                 <p style="margin: 0 0 8px 0; font-size: 13px; color: #374151;">${beat.address || 'Beat area'}</p>
+                <div style="margin: 8px 0; padding: 6px; background: ${isViolated ? '#fef2f2' : '#eff6ff'}; border: 1px solid ${isViolated ? '#fecaca' : '#bfdbfe'}; border-radius: 4px;">
+                  <p style="margin: 0; font-size: 12px; font-weight: 600; color: ${isViolated ? '#dc2626' : '#2563eb'};">
+                    ${isViolated ? '⚠️' : '✅'} ${statusText}
+                  </p>
+                  ${assignedPersonnel.length > 0 ? `<p style="margin: 2px 0 0 0; font-size: 11px; color: #6b7280;">Assigned Personnel: ${assignedPersonnel.length}</p>` : ''}
+                  ${violatingPersonnel.length > 0 ? `
+                    <div style="margin: 8px 0 0 0; padding: 6px; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 3px;">
+                      <p style="margin: 0 0 4px 0; font-size: 11px; font-weight: 600; color: #dc2626;">Personnel Out of Bounds:</p>
+                      ${violatingPersonnel.map(person => `
+                        <div style="margin: 2px 0; padding: 3px; background: white; border-radius: 2px;">
+                          <p style="margin: 0; font-size: 11px; color: #1f2937; font-weight: 500;">${person.rank} ${person.full_name}</p>
+                          <p style="margin: 0; font-size: 10px; color: #6b7280;">Distance: ${person.distance}m (${person.distance - beatRadius}m over limit)</p>
+                        </div>
+                      `).join('')}
+                    </div>
+                  ` : ''}
+                </div>
                 <p style="margin: 0; font-size: 12px; color: #9ca3af; font-family: monospace;"><strong>Coordinates:</strong> ${beatLat.toFixed(6)}, ${beatLng.toFixed(6)}</p>
               </div>
             `
@@ -198,7 +258,7 @@ function MiniMap({ personnel, beats, onMapReady }: {
             beatMarker.bindPopup(beatPopupContent)
             beatCircle.bindPopup(beatPopupContent)
             
-            console.log(`🎯 Added beat location for ${beat.name} at ${beatLat}, ${beatLng}`)
+            console.log(`🎯 Added beat location for ${beat.name} at ${beatLat}, ${beatLng} - Status: ${statusText}`)
           })
         }
 
@@ -915,11 +975,19 @@ export function LiveMonitoring() {
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="w-3 h-3 bg-blue-500 rounded-full border border-white shadow-sm"></div>
-                          <span className="text-gray-700">Beat Center</span>
+                          <span className="text-gray-700">Beat Center (Compliant)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 bg-red-500 rounded-full border border-white shadow-sm"></div>
+                          <span className="text-gray-700">Beat Center (Out of Bounds)</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="w-4 h-1 border-2 border-blue-500 border-dashed"></div>
-                          <span className="text-gray-700">Beat Radius</span>
+                          <span className="text-gray-700">Beat Radius (Normal)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-1 border-2 border-red-500 border-dashed"></div>
+                          <span className="text-gray-700">Beat Radius (Violated)</span>
                         </div>
                       </div>
                     </div>
@@ -938,7 +1006,7 @@ export function LiveMonitoring() {
                 <CardTitle className="flex items-center">
                   <Users className="h-5 w-5 mr-2" />
                   Personnel Live Location Tracking
-                  <span className="ml-2 text-xs text-gray-500 font-normal">(Click cards to focus map)</span>
+                  <span className="ml-2 text-xs text-gray-500 font-normal">(Click on-duty cards to focus map)</span>
                 </CardTitle>
                 <div className="flex items-center space-x-2">
                   <span className="text-xs text-gray-500">
@@ -1078,13 +1146,18 @@ export function LiveMonitoring() {
                     {filteredPersonnel.map((person, index) => {
                       const statusConfig = getStatusConfig(person.status)
                       const StatusIcon = statusConfig.icon
+                      const isOnDuty = person.status === 'on_duty'
                       
                       return (
                         <div
                           key={person.id || `person-${index}`}
-                          className={`p-3 rounded-lg border ${statusConfig.bgColor} ${statusConfig.borderColor} hover:shadow-md hover:scale-[1.02] transition-all duration-200 cursor-pointer`}
-                          onClick={() => focusOnPersonnel(person)}
-                          title="Click to focus map on this personnel location"
+                          className={`p-3 rounded-lg border ${statusConfig.bgColor} ${statusConfig.borderColor} transition-all duration-200 ${
+                            isOnDuty 
+                              ? 'hover:shadow-md hover:scale-[1.02] cursor-pointer' 
+                              : 'cursor-default'
+                          }`}
+                          onClick={isOnDuty ? () => focusOnPersonnel(person) : undefined}
+                          title={isOnDuty ? "Click to focus map on this personnel location" : "Only on-duty personnel can be focused on map"}
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-3">
