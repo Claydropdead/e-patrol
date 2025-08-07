@@ -532,8 +532,8 @@ const mockPersonnelData: PersonnelData[] = [
 ]
 
 export function LiveMonitoring() {
-  const [personnel, setPersonnel] = useState<PersonnelData[]>(mockPersonnelData)
-  const [loading, setLoading] = useState(false)
+  const [personnel, setPersonnel] = useState<PersonnelData[]>([])
+  const [loading, setLoading] = useState(true)
   const [manualRefreshing, setManualRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<DutyStatus | 'all'>('all')
@@ -542,20 +542,94 @@ export function LiveMonitoring() {
   const [searchTerm, setSearchTerm] = useState('')
   const [lastUpdate, setLastUpdate] = useState(new Date())
 
+  // Fetch personnel data from API
+  const fetchPersonnelData = async () => {
+    try {
+      setError(null)
+      
+      // Fetch personnel status and locations
+      const [statusResponse, locationsResponse] = await Promise.all([
+        fetch('/api/personnel/status'),
+        fetch('/api/personnel/locations')
+      ])
+      
+      if (!statusResponse.ok || !locationsResponse.ok) {
+        throw new Error('Failed to fetch personnel data')
+      }
+      
+      const statusData = await statusResponse.json()
+      const locationData = await locationsResponse.json()
+      
+      // Combine status and location data
+      const combinedData: PersonnelData[] = statusData.map((status: any) => {
+        const location = locationData.find((loc: any) => loc.personnel_id === status.personnel_id)
+        const personnel = status.personnel
+        
+        return {
+          id: personnel.id,
+          full_name: personnel.full_name,
+          rank: personnel.rank,
+          email: personnel.email || `${personnel.full_name.toLowerCase().replace(/\s+/g, '.')}@pnp.gov.ph`,
+          province: personnel.unit?.includes('PPO') ? personnel.unit.replace(' PPO', '') : 'MIMAROPA',
+          unit: personnel.unit,
+          sub_unit: personnel.sub_unit,
+          status: status.status,
+          status_changed_at: status.status_changed_at,
+          status_notes: status.status_notes,
+          latitude: location?.latitude || null,
+          longitude: location?.longitude || null,
+          last_update: location?.updated_at || null,
+          minutes_since_update: location?.updated_at ? 
+            Math.floor((Date.now() - new Date(location.updated_at).getTime()) / (1000 * 60)) : null,
+          is_online: !!location && location.updated_at && 
+            (Date.now() - new Date(location.updated_at).getTime()) < 15 * 60 * 1000, // 15 minutes
+        }
+      })
+      
+      setPersonnel(combinedData)
+      setLastUpdate(new Date())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Initial data load
+  useEffect(() => {
+    fetchPersonnelData()
+  }, [])
+
   // Simulate real-time updates
   useEffect(() => {
     const interval = setInterval(() => {
       setPersonnel(prev => prev.map(person => ({
         ...person,
-        minutes_since_update: (person.minutes_since_update || 0) + 1,
-        is_online: Math.random() > 0.1, // 90% chance of staying online
-        last_update: person.last_update // Keep original update time
+        minutes_since_update: person.last_update ? 
+          Math.floor((Date.now() - new Date(person.last_update).getTime()) / (1000 * 60)) : null,
+        is_online: person.last_update ? 
+          (Date.now() - new Date(person.last_update).getTime()) < 15 * 60 * 1000 : false
       })))
-      setLastUpdate(new Date())
     }, 60000) // Update every minute
 
     return () => clearInterval(interval)
   }, [])
+
+  // Auto-refresh data every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchPersonnelData()
+    }, 30000)
+
+    return () => clearInterval(interval)
+  }, [])
+
+  // Manual refresh function
+  const handleRefresh = async () => {
+    setManualRefreshing(true)
+    await fetchPersonnelData()
+    setManualRefreshing(false)
+  }
 
   // Calculate statistics
   const stats: PersonnelStats = {

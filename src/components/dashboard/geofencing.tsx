@@ -367,8 +367,90 @@ export function GeofencingContent() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [isCreateBeatOpen, setIsCreateBeatOpen] = useState(false)
   const [selectedBeat, setSelectedBeat] = useState<GeofenceBeat | null>(null)
-  const [beats, setBeats] = useState<GeofenceBeat[]>(mockBeats)
-  const [violations, setViolations] = useState<Violation[]>(mockViolations)
+  const [beats, setBeats] = useState<GeofenceBeat[]>([])
+  const [violations, setViolations] = useState<Violation[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch beats and personnel data from API
+  const fetchData = async () => {
+    try {
+      setError(null)
+      
+      const [beatsResponse, beatPersonnelResponse] = await Promise.all([
+        fetch('/api/beats'),
+        fetch('/api/beat-personnel')
+      ])
+      
+      if (!beatsResponse.ok || !beatPersonnelResponse.ok) {
+        throw new Error('Failed to fetch data')
+      }
+      
+      const beatsData = await beatsResponse.json()
+      const beatPersonnelData = await beatPersonnelResponse.json()
+      
+      // Transform database data to component format
+      const transformedBeats: GeofenceBeat[] = beatsData.map((beat: any) => {
+        const assignedPersonnel = beatPersonnelData
+          .filter((bp: any) => bp.beat_id === beat.id)
+          .map((bp: any) => bp.personnel.full_name)
+        
+        const pendingPersonnel = beatPersonnelData
+          .filter((bp: any) => bp.beat_id === beat.id && bp.status === 'pending')
+          .map((bp: any) => bp.personnel.full_name)
+        
+        const acceptedPersonnel = beatPersonnelData
+          .filter((bp: any) => bp.beat_id === beat.id && bp.status === 'accepted')
+          .map((bp: any) => bp.personnel.full_name)
+        
+        return {
+          id: beat.id,
+          name: beat.name,
+          location: {
+            lat: beat.center_lat,
+            lng: beat.center_lng,
+            address: beat.address || `${beat.name} Area`
+          },
+          radius: beat.radius_meters,
+          province: beat.unit?.includes('PPO') ? beat.unit.replace(' PPO', '') : 'MIMAROPA',
+          unit: beat.unit,
+          subUnit: beat.sub_unit,
+          assignedPersonnel,
+          status: 'active' as const,
+          createdAt: beat.created_at,
+          violations: 0, // TODO: implement violations tracking
+          lastActivity: beat.created_at,
+          beatStatus: acceptedPersonnel.length > 0 ? 'on_duty' : 
+                     pendingPersonnel.length > 0 ? 'pending' : 'completed',
+          assignedPersonnelDetails: beatPersonnelData
+            .filter((bp: any) => bp.beat_id === beat.id)
+            .map((bp: any) => ({
+              id: bp.personnel.id,
+              name: bp.personnel.full_name,
+              rank: bp.personnel.rank,
+              email: bp.personnel.email,
+              status: bp.status,
+              assignedAt: bp.assigned_at,
+              acceptedAt: bp.accepted_at
+            })),
+          dutyStartTime: beat.created_at,
+          estimatedDuration: '8 hours'
+        }
+      })
+      
+      setBeats(transformedBeats)
+      setViolations([]) // TODO: implement violations from database
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch data')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Initial data load
+  useEffect(() => {
+    fetchData()
+  }, [])
 
   // Use refs to avoid stale closures and prevent infinite loops
   const beatsRef = useRef(beats)
@@ -541,7 +623,10 @@ export function GeofencingContent() {
               Create Beat
             </Button>
           </DialogTrigger>
-          <CreateBeatDialog onClose={() => setIsCreateBeatOpen(false)} />
+          <CreateBeatDialog 
+            onClose={() => setIsCreateBeatOpen(false)} 
+            onBeatCreated={fetchData}
+          />
         </Dialog>
       </div>
 
@@ -827,7 +912,7 @@ function BeatTableRow({
 }
 
 // Create Beat Dialog Component
-function CreateBeatDialog({ onClose }: { onClose: () => void }) {
+function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onBeatCreated?: () => void }) {
   const [formData, setFormData] = useState({
     name: '',
     address: '',
@@ -840,6 +925,57 @@ function CreateBeatDialog({ onClose }: { onClose: () => void }) {
     dutyEndTime: '',
     selectedPersonnel: [] as string[]
   })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Handle form submission
+  const handleSubmit = async () => {
+    if (!formData.name || !formData.unit || !formData.subUnit || !formData.lat || !formData.lng) {
+      setError('Please fill in all required fields')
+      return
+    }
+
+    setIsSubmitting(true)
+    setError(null)
+
+    try {
+      // Create the beat
+      const beatResponse = await fetch('/api/beats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formData.name,
+          center_lat: parseFloat(formData.lat),
+          center_lng: parseFloat(formData.lng),
+          radius: parseInt(formData.radius),
+          unit: formData.unit,
+          sub_unit: formData.subUnit,
+          description: formData.address
+        })
+      })
+
+      if (!beatResponse.ok) {
+        throw new Error('Failed to create beat')
+      }
+
+      const newBeat = await beatResponse.json()
+
+      // If personnel selected, assign them to the beat
+      if (formData.selectedPersonnel.length > 0) {
+        // Note: This would require personnel IDs, not names
+        // For now, we'll skip personnel assignment during creation
+        console.log('Personnel assignment would happen here:', formData.selectedPersonnel)
+      }
+
+      // Refresh parent data and close dialog
+      onBeatCreated?.()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create beat')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   // Mock personnel data - in real app, fetch from database
   const mockPersonnel = [
@@ -1115,15 +1251,27 @@ function CreateBeatDialog({ onClose }: { onClose: () => void }) {
       </div>
       
       <DialogFooter className="pt-4">
-        <Button variant="outline" onClick={onClose}>
+        {error && (
+          <div className="w-full mb-2 p-2 bg-red-50 border border-red-200 rounded-md text-red-600 text-sm">
+            {error}
+          </div>
+        )}
+        <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
           Cancel
         </Button>
         <Button 
-          onClick={onClose} 
-          disabled={!formData.name || !formData.unit || !formData.subUnit || !formData.dutyStartTime || !formData.dutyEndTime}
+          onClick={handleSubmit}
+          disabled={!formData.name || !formData.unit || !formData.subUnit || !formData.lat || !formData.lng || isSubmitting}
           className="bg-blue-600 hover:bg-blue-700"
         >
-          Create Beat
+          {isSubmitting ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              Creating...
+            </>
+          ) : (
+            'Create Beat'
+          )}
         </Button>
       </DialogFooter>
     </DialogContent>
