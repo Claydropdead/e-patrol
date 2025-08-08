@@ -35,9 +35,9 @@ export const createDatabaseClient = (): Client => {
 }
 
 // Helper function to execute SQL queries safely
-export const executeQuery = async <T = any>(
+export const executeQuery = async <T = Record<string, unknown>>(
   query: string, 
-  params: any[] = []
+  params: unknown[] = []
 ): Promise<T[]> => {
   const client = createDatabaseClient()
   

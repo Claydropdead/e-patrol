@@ -11,11 +11,7 @@ import {
   Eye,
   Clock,
   CheckCircle,
-  XCircle,
   Timer,
-  UserCheck,
-  UserX,
-  Bell,
   Activity,
   ChevronUp,
   ChevronDown
@@ -83,174 +79,7 @@ interface Violation {
   notificationSent?: boolean
 }
 
-// Mock data
-const mockBeats: GeofenceBeat[] = [
-  {
-    id: '1',
-    name: 'Calapan City Center Beat',
-    location: {
-      lat: 13.4119,
-      lng: 121.1805,
-      address: 'Calapan City Proper, Oriental Mindoro'
-    },
-    radius: 500,
-    province: 'Oriental Mindoro',
-    unit: 'Oriental Mindoro PPO',
-    subUnit: 'Calapan CPS',
-    assignedPersonnel: ['PO1 Juan Cruz', 'PO2 Maria Santos'],
-    status: 'active',
-    createdAt: '2024-01-15',
-    violations: 1,
-    lastActivity: 'Just now',
-    dutyStartTime: '00:00',
-    dutyEndTime: '23:59',
-    beatStatus: 'on_duty',
-    acceptanceTime: 'Dec 28, 05:45 AM',
-    personnelAcceptance: {
-      'PO1 Juan Cruz': { status: 'accepted', timestamp: 'Dec 28, 05:40 AM' },
-      'PO2 Maria Santos': { status: 'accepted', timestamp: 'Dec 28, 05:45 AM' }
-    }
-  },
-  {
-    id: '2',
-    name: 'Puerto Princesa Airport Beat',
-    location: {
-      lat: 9.7419,
-      lng: 118.7591,
-      address: 'Puerto Princesa International Airport, Palawan'
-    },
-    radius: 800,
-    province: 'Palawan',
-    unit: 'Puerto Princesa CPO',
-    subUnit: 'Airport Security',
-    assignedPersonnel: ['SPO1 Carlos Reyes', 'PO3 Ana Lopez'],
-    status: 'active',
-    createdAt: '2024-02-01',
-    violations: 0,
-    lastActivity: '30 minutes ago',
-    dutyStartTime: '00:00',
-    dutyEndTime: '23:59',
-    beatStatus: 'on_duty',
-    acceptanceTime: 'Dec 28, 07:45 AM',
-    personnelAcceptance: {
-      'SPO1 Carlos Reyes': { status: 'accepted', timestamp: 'Dec 28, 07:30 AM' },
-      'PO3 Ana Lopez': { status: 'accepted', timestamp: 'Dec 28, 07:45 AM' }
-    }
-  },
-  {
-    id: '3',
-    name: 'Boac Municipal Hall Beat',
-    location: {
-      lat: 13.4526,
-      lng: 121.8427,
-      address: 'Boac Municipal Hall, Marinduque'
-    },
-    radius: 300,
-    province: 'Marinduque',
-    unit: 'Marinduque PPO',
-    subUnit: 'Boac MPS',
-    assignedPersonnel: ['PO1 Roberto Garcia'],
-    status: 'active',
-    createdAt: '2024-01-20',
-    violations: 0,
-    lastActivity: '2 hours ago',
-    dutyStartTime: '00:00',
-    dutyEndTime: '23:59',
-    beatStatus: 'completed',
-    acceptanceTime: 'Dec 28, 06:30 AM',
-    personnelAcceptance: {
-      'PO1 Roberto Garcia': { status: 'accepted', timestamp: 'Dec 28, 06:30 AM' }
-    }
-  },
-  {
-    id: '4',
-    name: 'Romblon Port Beat',
-    location: {
-      lat: 12.5808,
-      lng: 122.2691,
-      address: 'Romblon Port Area, Romblon'
-    },
-    radius: 400,
-    province: 'Romblon',
-    unit: 'Romblon PPO',
-    subUnit: 'Romblon MPS',
-    assignedPersonnel: ['PO2 Lisa Morales', 'PO1 Mark Dela Cruz'],
-    status: 'active',
-    createdAt: '2024-02-10',
-    violations: 2,
-    lastActivity: '1 hour ago',
-    dutyStartTime: '00:00',
-    dutyEndTime: '23:59',
-    beatStatus: 'pending',
-    acceptanceTime: 'Pending full acceptance',
-    personnelAcceptance: {
-      'PO2 Lisa Morales': { status: 'accepted', timestamp: 'Dec 28, 05:30 AM' },
-      'PO1 Mark Dela Cruz': { status: 'pending', timestamp: undefined }
-    }
-  }
-]
-
-const mockViolations: Violation[] = [
-  {
-    id: '1',
-    beatId: '1',
-    beatName: 'Calapan City Center Beat',
-    personnelName: 'PO1 Juan Cruz',
-    personnelId: 'p001',
-    type: 'exit',
-    timestamp: '2024-12-28 14:30:00',
-    location: { lat: 13.4120, lng: 121.1810 },
-    status: 'pending',
-    distanceFromCenter: 650, // 650m from center (beat radius is 500m)
-    responseTime: 300,
-    notificationSent: true
-  },
-  {
-    id: '2',
-    beatId: '4',
-    beatName: 'Romblon Port Beat',
-    personnelName: 'PO2 Lisa Morales',
-    personnelId: 'p002',
-    type: 'exit',
-    timestamp: '2024-12-28 13:15:00',
-    location: { lat: 12.5815, lng: 122.2700 },
-    status: 'acknowledged',
-    acknowledgedAt: '2024-12-28 13:45:00',
-    distanceFromCenter: 520, // 520m from center (beat radius is 400m)
-    responseTime: 1800,
-    notificationSent: true
-  },
-  {
-    id: '3',
-    beatId: '4',
-    beatName: 'Romblon Port Beat',
-    personnelName: 'PO1 Mark Dela Cruz',
-    personnelId: 'p003',
-    type: 'exit',
-    timestamp: '2024-12-28 12:00:00',
-    location: { lat: 12.5820, lng: 122.2705 },
-    status: 'resolved',
-    resolvedAt: '2024-12-28 12:30:00',
-    distanceFromCenter: 580, // 580m from center (beat radius is 400m)
-    responseTime: 1800,
-    notificationSent: true
-  }
-]
-
 // Helper functions
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case 'active': return 'bg-green-100 text-green-800'
-    case 'inactive': return 'bg-red-100 text-red-800'
-    case 'maintenance': return 'bg-yellow-100 text-yellow-800'
-    case 'pending': return 'bg-orange-100 text-orange-800'
-    case 'resolved': return 'bg-green-100 text-green-800'
-    case 'ignored': return 'bg-gray-100 text-gray-800'
-    case 'acknowledged': return 'bg-blue-100 text-blue-800'
-    default: return 'bg-gray-100 text-gray-800'
-  }
-}
-
 const getBeatStatusColor = (status: string) => {
   switch (status) {
     case 'pending': return 'bg-yellow-100 text-yellow-800'
@@ -353,10 +182,6 @@ const calculateDutyDuration = (startTime?: string, endTime?: string) => {
 }
 
 // Helper function to get violation details for a specific beat
-const getViolationDetailsForBeat = (beatId: string, violations: Violation[]): Violation[] => {
-  return violations.filter(violation => violation.beatId === beatId)
-}
-
 export function GeofencingContent() {
   const [selectedTab, setSelectedTab] = useState('beats')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -369,13 +194,10 @@ export function GeofencingContent() {
   const [selectedBeat, setSelectedBeat] = useState<GeofenceBeat | null>(null)
   const [beats, setBeats] = useState<GeofenceBeat[]>([])
   const [violations, setViolations] = useState<Violation[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
   // Fetch beats and personnel data from API
   const fetchData = async () => {
     try {
-      setError(null)
       
       const [beatsResponse, beatPersonnelResponse] = await Promise.all([
         fetch('/api/beats'),
@@ -390,50 +212,50 @@ export function GeofencingContent() {
       const beatPersonnelData = await beatPersonnelResponse.json()
       
       // Transform database data to component format
-      const transformedBeats: GeofenceBeat[] = beatsData.map((beat: any) => {
+      const transformedBeats: GeofenceBeat[] = beatsData.map((beat: Record<string, unknown>) => {
         const assignedPersonnel = beatPersonnelData
-          .filter((bp: any) => bp.beat_id === beat.id)
-          .map((bp: any) => bp.personnel.full_name)
+          .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id)
+          .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>).full_name as string)
         
         const pendingPersonnel = beatPersonnelData
-          .filter((bp: any) => bp.beat_id === beat.id && bp.status === 'pending')
-          .map((bp: any) => bp.personnel.full_name)
+          .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id && bp.status === 'pending')
+          .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>).full_name as string)
         
         const acceptedPersonnel = beatPersonnelData
-          .filter((bp: any) => bp.beat_id === beat.id && bp.status === 'accepted')
-          .map((bp: any) => bp.personnel.full_name)
+          .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id && bp.status === 'accepted')
+          .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>).full_name as string)
         
         return {
-          id: beat.id,
-          name: beat.name,
+          id: beat.id as string,
+          name: beat.name as string,
           location: {
-            lat: beat.center_lat,
-            lng: beat.center_lng,
-            address: beat.address || `${beat.name} Area`
+            lat: beat.center_lat as number,
+            lng: beat.center_lng as number,
+            address: (beat.address as string) || `${beat.name as string} Area`
           },
-          radius: beat.radius_meters,
-          province: beat.unit?.includes('PPO') ? beat.unit.replace(' PPO', '') : 'MIMAROPA',
-          unit: beat.unit,
-          subUnit: beat.sub_unit,
+          radius: beat.radius_meters as number,
+          province: (beat.unit as string)?.includes('PPO') ? (beat.unit as string).replace(' PPO', '') : 'MIMAROPA',
+          unit: beat.unit as string,
+          subUnit: beat.sub_unit as string,
           assignedPersonnel,
           status: 'active' as const,
-          createdAt: beat.created_at,
+          createdAt: beat.created_at as string,
           violations: 0, // TODO: implement violations tracking
-          lastActivity: beat.created_at,
+          lastActivity: beat.created_at as string,
           beatStatus: acceptedPersonnel.length > 0 ? 'on_duty' : 
                      pendingPersonnel.length > 0 ? 'pending' : 'completed',
           assignedPersonnelDetails: beatPersonnelData
-            .filter((bp: any) => bp.beat_id === beat.id)
-            .map((bp: any) => ({
-              id: bp.personnel.id,
-              name: bp.personnel.full_name,
-              rank: bp.personnel.rank,
-              email: bp.personnel.email,
-              status: bp.status,
-              assignedAt: bp.assigned_at,
-              acceptedAt: bp.accepted_at
+            .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id)
+            .map((bp: Record<string, unknown>) => ({
+              id: (bp.personnel as Record<string, unknown>).id as string,
+              name: (bp.personnel as Record<string, unknown>).full_name as string,
+              rank: (bp.personnel as Record<string, unknown>).rank as string,
+              email: (bp.personnel as Record<string, unknown>).email as string,
+              status: bp.status as string,
+              assignedAt: bp.assigned_at as string,
+              acceptedAt: bp.accepted_at as string
             })),
-          dutyStartTime: beat.created_at,
+          dutyStartTime: beat.created_at as string,
           estimatedDuration: '8 hours'
         }
       })
@@ -441,9 +263,7 @@ export function GeofencingContent() {
       setBeats(transformedBeats)
       setViolations([]) // TODO: implement violations from database
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch data')
-    } finally {
-      setLoading(false)
+      console.error('Failed to fetch data:', err)
     }
   }
 
@@ -958,8 +778,6 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
         throw new Error('Failed to create beat')
       }
 
-      const newBeat = await beatResponse.json()
-
       // If personnel selected, assign them to the beat
       if (formData.selectedPersonnel.length > 0) {
         // Note: This would require personnel IDs, not names
@@ -977,17 +795,32 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
     }
   }
 
-  // Mock personnel data - in real app, fetch from database
-  const mockPersonnel = [
-    { id: '1', name: 'PO1 Juan Cruz', rank: 'PO1', unit: 'Oriental Mindoro PPO', subUnit: 'Calapan CPS' },
-    { id: '2', name: 'PO2 Maria Santos', rank: 'PO2', unit: 'Calapan CPS', subUnit: 'Beat 1' },
-    { id: '3', name: 'SPO1 Carlos Reyes', rank: 'SPO1', unit: 'Puerto Princesa CPO', subUnit: 'Airport Security' },
-    { id: '4', name: 'PO3 Ana Lopez', rank: 'PO3', unit: 'Puerto Princesa CPO', subUnit: 'Airport Security' },
-    { id: '5', name: 'PO1 Roberto Garcia', rank: 'PO1', unit: 'Boac MPS', subUnit: 'Government District' },
-    { id: '6', name: 'PO2 Lisa Morales', rank: 'PO2', unit: 'Romblon MPS', subUnit: 'Port Security' },
-    { id: '7', name: 'PO1 Mark Santos', rank: 'PO1', unit: 'Calapan CPS', subUnit: 'Traffic Unit' },
-    { id: '8', name: 'SPO2 Elena Cruz', rank: 'SPO2', unit: 'Puerto Princesa CPO', subUnit: 'City Patrol' },
-  ]
+  // Fetch personnel data from API for beat assignment
+  const [personnelData, setPersonnelData] = useState<Array<{id: string, name: string, rank: string, unit: string, subUnit: string}>>([])
+  
+  React.useEffect(() => {
+    const fetchPersonnel = async () => {
+      try {
+        const response = await fetch('/api/users')
+        if (response.ok) {
+          const data = await response.json()
+          const personnel = data.data
+            .filter((user: Record<string, unknown>) => user.role === 'personnel')
+            .map((user: Record<string, unknown>) => ({
+              id: user.id as string,
+              name: user.full_name as string,
+              rank: user.rank as string,
+              unit: user.unit as string,
+              subUnit: user.sub_unit as string
+            }))
+          setPersonnelData(personnel)
+        }
+      } catch (error) {
+        console.error('Failed to fetch personnel:', error)
+      }
+    }
+    fetchPersonnel()
+  }, [])
 
   const units = Object.keys(MIMAROPA_STRUCTURE) // Main units (provinces)
   
@@ -995,7 +828,7 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
   const availableSubUnits = formData.unit ? MIMAROPA_STRUCTURE[formData.unit as keyof typeof MIMAROPA_STRUCTURE]?.subUnits || [] : []
 
   // Filter personnel based on selected unit and subunit
-  const filteredPersonnel = mockPersonnel.filter(person => {
+  const filteredPersonnel = personnelData.filter(person => {
     if (!formData.unit) return false
     if (person.unit !== formData.unit) return false
     if (formData.subUnit && person.subUnit !== formData.subUnit) return false
@@ -1286,8 +1119,6 @@ function BeatDetailsDialog({
   beat: GeofenceBeat
   onClose: () => void 
 }) {
-  const beatViolations = getViolationDetailsForBeat(beat.id, mockViolations)
-  
   return (
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">

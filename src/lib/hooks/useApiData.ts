@@ -62,7 +62,7 @@ export function useApiData<T = unknown>({
     } finally {
       setLoading(false)
     }
-  }, [endpoint]) // Simplified dependencies - removed unstable params and callbacks
+  }, [endpoint, onError, onSuccess, params]) // Added all dependencies
 
   // Initial data fetch only
   useEffect(() => {
@@ -72,7 +72,7 @@ export function useApiData<T = unknown>({
     } else {
       fetchData()
     }
-  }, []) // Empty dependency array - only run once on mount
+  }, [debounceMs, fetchData]) // Added dependencies
 
   // Manual refresh function for external triggers
   const refresh = useCallback(() => {

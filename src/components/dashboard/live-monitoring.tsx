@@ -22,7 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 // Mini map component for Live Monitoring
 function MiniMap({ personnel, beats, onMapReady }: { 
   personnel: PersonnelData[], 
-  beats: any[], 
+  beats: Record<string, unknown>[], 
   onMapReady?: (map: L.Map) => void 
 }) {
   const [isLoaded, setIsLoaded] = useState(false)
@@ -280,9 +280,9 @@ function MiniMap({ personnel, beats, onMapReady }: {
         // First, add all beats to the map with dynamic coloring based on personnel compliance
         if (beats && beats.length > 0) {
           beats.forEach((beat) => {
-            const beatLat = beat.center_lat
-            const beatLng = beat.center_lng
-            const beatRadius = beat.radius_meters || 500
+            const beatLat = beat.center_lat as number
+            const beatLng = beat.center_lng as number
+            const beatRadius = (beat.radius_meters as number) || 500
 
             // Check if any on-duty personnel assigned to this beat are outside the radius
             const assignedPersonnel = personnel.filter(person => 
@@ -293,7 +293,7 @@ function MiniMap({ personnel, beats, onMapReady }: {
             )
 
             let isViolated = false
-            let violatingPersonnel: any[] = []
+            const violatingPersonnel: Record<string, unknown>[] = []
             
             if (assignedPersonnel.length > 0) {
               // Check if any assigned personnel are outside the beat radius and collect them
@@ -376,8 +376,8 @@ function MiniMap({ personnel, beats, onMapReady }: {
                       <p style="margin: 0 0 4px 0; font-size: 11px; font-weight: 600; color: #dc2626;">Personnel Out of Bounds:</p>
                       ${violatingPersonnel.map(person => `
                         <div style="margin: 2px 0; padding: 3px; background: white; border-radius: 2px;">
-                          <p style="margin: 0; font-size: 11px; color: #1f2937; font-weight: 500;">${person.rank} ${person.full_name}</p>
-                          <p style="margin: 0; font-size: 10px; color: #6b7280;">Distance: ${person.distance}m (${person.distance - beatRadius}m over limit)</p>
+                          <p style="margin: 0; font-size: 11px; color: #1f2937; font-weight: 500;">${(person as Record<string, unknown>).rank} ${(person as Record<string, unknown>).full_name}</p>
+                          <p style="margin: 0; font-size: 10px; color: #6b7280;">Distance: ${(person as Record<string, unknown>).distance}m (${((person as Record<string, unknown>).distance as number) - beatRadius}m over limit)</p>
                         </div>
                       `).join('')}
                     </div>
@@ -395,28 +395,11 @@ function MiniMap({ personnel, beats, onMapReady }: {
         }
 
         // Then add personnel markers
-        personnel.filter(person => person.status === 'on_duty').forEach((person, index) => {
-          let lat = person.latitude
-          let lng = person.longitude
+        personnel.filter(person => person.status === 'on_duty').forEach((person) => {
+          const lat = person.latitude
+          const lng = person.longitude
           
-          // For testing: Add mock coordinates if none exist
-          if (!lat || !lng) {
-            // Spread personnel across MIMAROPA region
-            const baseCoords = [
-              [13.4, 121.0], // Marinduque area
-              [12.5, 121.7], // Romblon area  
-              [11.5, 120.0], // Palawan north
-              [9.5, 118.7],  // Palawan south
-              [13.2, 120.9], // Occidental Mindoro
-              [13.0, 121.3], // Oriental Mindoro
-            ]
-            const baseIndex = index % baseCoords.length
-            lat = baseCoords[baseIndex][0] + (Math.random() - 0.5) * 0.2
-            lng = baseCoords[baseIndex][1] + (Math.random() - 0.5) * 0.2
-            
-            console.log(`📍 Adding mock coordinates for ${person.full_name}: ${lat}, ${lng}`)
-          }
-
+          // Only show personnel with valid coordinates from database
           if (lat && lng) {
             const color = person.status === 'alert' ? '#ef4444' :
                          person.status === 'standby' ? '#f59e0b' :
@@ -484,7 +467,7 @@ function MiniMap({ personnel, beats, onMapReady }: {
     }
 
     updateMarkers()
-  }, [personnel, beats]) // mapRef doesn't need to be in dependencies
+  }, [personnel, beats]) // onMapReady is optional and should be stable
 
   if (!isLoaded) {
     return (
@@ -497,7 +480,7 @@ function MiniMap({ personnel, beats, onMapReady }: {
   return <div id="mini-map" className="h-full w-full rounded-lg" />
 }
 
-// Types for mock data
+// Personnel data types
 interface PersonnelData {
   id: string
   full_name: string
@@ -533,184 +516,9 @@ interface PersonnelStats {
   onDuty: number
 }
 
-// Mock personnel data
-const mockPersonnelData: PersonnelData[] = [
-  {
-    id: '1',
-    full_name: 'PO1 Juan Cruz',
-    rank: 'PO1',
-    email: 'juan.cruz@pnp.gov.ph',
-    province: 'Oriental Mindoro',
-    unit: 'Oriental Mindoro PPO',
-    sub_unit: 'Calapan CPS',
-    status: 'on_duty',
-    status_changed_at: '2024-12-28T08:30:00Z',
-    status_notes: 'On patrol',
-    latitude: 13.4119,
-    longitude: 121.1805,
-    last_update: '2024-12-28T08:30:00Z',
-    minutes_since_update: 5,
-    is_online: true,
-    beat_name: 'Calapan Downtown Beat',
-    beat_radius: 500,
-    beat_location: {
-      center_lat: 13.4119,
-      center_lng: 121.1805,
-      description: 'Central business district including city hall, market area, and main commercial streets'
-    }
-  },
-  {
-    id: '2',
-    full_name: 'PO2 Maria Santos',
-    rank: 'PO2',
-    email: 'maria.santos@pnp.gov.ph',
-    province: 'Oriental Mindoro',
-    unit: 'Oriental Mindoro PPO',
-    sub_unit: 'Baco MPS',
-    status: 'on_duty',
-    status_changed_at: '2024-12-28T08:15:00Z',
-    status_notes: 'Traffic duty',
-    latitude: 13.4125,
-    longitude: 121.1810,
-    last_update: '2024-12-28T08:28:00Z',
-    minutes_since_update: 7,
-    is_online: true,
-    beat_name: 'Baco Highway Beat',
-    beat_radius: 800,
-    beat_location: {
-      center_lat: 13.4125,
-      center_lng: 121.1810,
-      description: 'Major highway intersection with traffic control and vehicle checkpoints'
-    }
-  },
-  {
-    id: '3',
-    full_name: 'SPO1 Carlos Reyes',
-    rank: 'SPO1',
-    email: 'carlos.reyes@pnp.gov.ph',
-    province: 'Palawan',
-    unit: 'Puerto Princesa CPO',
-    sub_unit: 'Airport Security',
-    status: 'alert',
-    status_changed_at: '2024-12-28T08:00:00Z',
-    status_notes: 'Emergency response',
-    latitude: 9.7419,
-    longitude: 118.7591,
-    last_update: '2024-12-28T08:25:00Z',
-    minutes_since_update: 10,
-    is_online: true
-  },
-  {
-    id: '4',
-    full_name: 'PO1 Roberto Garcia',
-    rank: 'PO1',
-    email: 'roberto.garcia@pnp.gov.ph',
-    province: 'Marinduque',
-    unit: 'Marinduque PPO',
-    sub_unit: 'Boac MPS',
-    status: 'standby',
-    status_changed_at: '2024-12-28T07:45:00Z',
-    status_notes: 'Station duty',
-    latitude: 13.4526,
-    longitude: 121.8427,
-    last_update: '2024-12-28T08:20:00Z',
-    minutes_since_update: 15,
-    is_online: true
-  },
-  {
-    id: '5',
-    full_name: 'PO2 Lisa Morales',
-    rank: 'PO2',
-    email: 'lisa.morales@pnp.gov.ph',
-    province: 'Romblon',
-    unit: 'Romblon PPO',
-    sub_unit: 'Romblon MPS',
-    status: 'on_duty',
-    status_changed_at: '2024-12-28T07:30:00Z',
-    status_notes: 'Harbor patrol',
-    latitude: 12.5808,
-    longitude: 122.2691,
-    last_update: '2024-12-28T08:15:00Z',
-    minutes_since_update: 20,
-    is_online: true,
-    beat_name: 'Romblon Port Beat',
-    beat_radius: 600,
-    beat_location: {
-      center_lat: 12.5808,
-      center_lng: 122.2691,
-      description: 'Port area including ferry terminal, cargo facilities, and waterfront security'
-    }
-  },
-  {
-    id: '6',
-    full_name: 'PO3 Mark Santos',
-    rank: 'PO3',
-    email: 'mark.santos@pnp.gov.ph',
-    province: 'Occidental Mindoro',
-    unit: 'Occidental Mindoro PPO',
-    sub_unit: 'Mamburao MPS',
-    status: 'on_duty',
-    status_changed_at: '2024-12-28T07:00:00Z',
-    status_notes: 'Road patrol',
-    latitude: 13.2200,
-    longitude: 120.6089,
-    last_update: '2024-12-28T08:10:00Z',
-    minutes_since_update: 25,
-    is_online: true,
-    beat_name: 'Mamburao Coastal Beat',
-    beat_radius: 900,
-    beat_location: {
-      center_lat: 13.2200,
-      center_lng: 120.6089,
-      description: 'Coastal highway patrol covering main road network and beach area security'
-    }
-  },
-  {
-    id: '7',
-    full_name: 'SPO2 Elena Cruz',
-    rank: 'SPO2',
-    email: 'elena.cruz@pnp.gov.ph',
-    province: 'Palawan',
-    unit: 'Palawan PPO',
-    sub_unit: 'Brookes Point MPS',
-    status: 'alert',
-    status_changed_at: '2024-12-28T06:45:00Z',
-    status_notes: 'Incident response',
-    latitude: 8.7833,
-    longitude: 117.8333,
-    last_update: '2024-12-28T08:05:00Z',
-    minutes_since_update: 30,
-    is_online: false
-  },
-  {
-    id: '8',
-    full_name: 'PO1 Jose Reyes',
-    rank: 'PO1',
-    email: 'jose.reyes@pnp.gov.ph',
-    province: 'Romblon',
-    unit: 'Romblon PPO',
-    sub_unit: 'Odiongan MPS',
-    status: 'on_duty',
-    status_changed_at: '2024-12-28T06:30:00Z',
-    status_notes: 'Community patrol',
-    latitude: 12.4028,
-    longitude: 121.9694,
-    last_update: '2024-12-28T08:00:00Z',
-    minutes_since_update: 35,
-    is_online: true,
-    beat_name: 'Odiongan Town Center Beat',
-    beat_radius: 750,
-    beat_location: {
-      center_lat: 12.4028,
-      center_lng: 121.9694,
-      description: 'Town center including municipal hall, church, school zone, and residential areas'
-    }
-  }
-]
-
 export function LiveMonitoring() {
   const [personnel, setPersonnel] = useState<PersonnelData[]>([])
-  const [beats, setBeats] = useState<any[]>([])
+  const [beats, setBeats] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(true)
   const [manualRefreshing, setManualRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -725,31 +533,18 @@ export function LiveMonitoring() {
   const focusOnPersonnel = (person: PersonnelData) => {
     if (!mapInstance.current) return
     
-    let lat = person.latitude
-    let lng = person.longitude
+    const lat = person.latitude
+    const lng = person.longitude
     
-    // Use mock coordinates if real ones don't exist (same logic as in map)
-    if (!lat || !lng) {
-      const baseCoords = [
-        [13.4, 121.0], // Marinduque area
-        [12.5, 121.7], // Romblon area  
-        [11.5, 120.0], // Palawan north
-        [9.5, 118.7],  // Palawan south
-        [13.2, 120.9], // Occidental Mindoro
-        [13.0, 121.3], // Oriental Mindoro
-      ]
-      const personIndex = personnel.findIndex(p => p.id === person.id)
-      const baseIndex = personIndex % baseCoords.length
-      lat = baseCoords[baseIndex][0] + (Math.random() - 0.5) * 0.2
-      lng = baseCoords[baseIndex][1] + (Math.random() - 0.5) * 0.2
-    }
-    
+    // Only focus if personnel has valid coordinates from database
     if (lat && lng) {
       mapInstance.current.setView([lat, lng], 15, {
         animate: true,
         duration: 1
       })
       console.log(`🎯 Focused map on ${person.full_name} at ${lat}, ${lng}`)
+    } else {
+      console.log(`⚠️ No coordinates available for ${person.full_name}`)
     }
   }
 
@@ -784,36 +579,38 @@ export function LiveMonitoring() {
       setBeats(beatsData)
       
       // Combine status, location, and beat assignment data
-      const combinedData: PersonnelData[] = statusData.map((status: any) => {
-        const location = locationData.find((loc: any) => loc.personnel_id === status.personnel_id)
-        const beatAssignment = beatPersonnelData.find((bp: any) => bp.personnel_id === status.personnel_id)
-        const personnel = status.personnel
+      const combinedData: PersonnelData[] = statusData.map((status: Record<string, unknown>) => {
+        const location = locationData.find((loc: Record<string, unknown>) => loc.personnel_id === status.personnel_id)
+        const beatAssignment = beatPersonnelData.find((bp: Record<string, unknown>) => bp.personnel_id === status.personnel_id)
+        const personnel = status.personnel as Record<string, unknown>
         
         return {
-          id: personnel.id,
-          full_name: personnel.full_name,
-          rank: personnel.rank,
-          email: personnel.email || `${personnel.full_name.toLowerCase().replace(/\s+/g, '.')}@pnp.gov.ph`,
-          province: personnel.unit?.includes('PPO') ? personnel.unit.replace(' PPO', '') : 'MIMAROPA',
-          unit: personnel.unit,
-          sub_unit: personnel.sub_unit,
-          status: status.status,
-          status_changed_at: status.status_changed_at,
-          status_notes: status.status_notes,
-          latitude: location?.latitude || null,
-          longitude: location?.longitude || null,
-          last_update: location?.updated_at || null,
+          id: personnel.id as string,
+          full_name: personnel.full_name as string,
+          rank: personnel.rank as string,
+          email: (personnel.email as string) || `${(personnel.full_name as string).toLowerCase().replace(/\s+/g, '.')}@pnp.gov.ph`,
+          province: (personnel.unit as string)?.includes('PPO') ? (personnel.unit as string).replace(' PPO', '') : 'MIMAROPA',
+          unit: personnel.unit as string,
+          sub_unit: personnel.sub_unit as string,
+          status: status.status as string,
+          status_changed_at: status.status_changed_at as string,
+          status_notes: status.status_notes as string,
+          latitude: (location?.latitude as number) || null,
+          longitude: (location?.longitude as number) || null,
+          last_update: (location?.updated_at as string) || null,
           minutes_since_update: location?.updated_at ? 
-            Math.floor((Date.now() - new Date(location.updated_at).getTime()) / (1000 * 60)) : null,
+            Math.floor((Date.now() - new Date(location.updated_at as string).getTime()) / (1000 * 60)) : null,
           is_online: !!location && location.updated_at && 
-            (Date.now() - new Date(location.updated_at).getTime()) < 15 * 60 * 1000, // 15 minutes
+            (Date.now() - new Date(location.updated_at as string).getTime()) < 15 * 60 * 1000, // 15 minutes
           // Beat information from beat assignment
-          beat_name: beatAssignment?.beats?.name || null,
-          beat_radius: beatAssignment?.beats?.radius_meters || null,
-          beat_location: beatAssignment?.beats ? {
-            center_lat: beatAssignment.beats.center_lat,
-            center_lng: beatAssignment.beats.center_lng,
-            description: beatAssignment.beats.address || 'Beat area'
+          beat_name: (beatAssignment as Record<string, unknown>)?.beats ? 
+            ((beatAssignment as Record<string, unknown>).beats as Record<string, unknown>).name as string : null,
+          beat_radius: (beatAssignment as Record<string, unknown>)?.beats ? 
+            ((beatAssignment as Record<string, unknown>).beats as Record<string, unknown>).radius_meters as number : null,
+          beat_location: (beatAssignment as Record<string, unknown>)?.beats ? {
+            center_lat: ((beatAssignment as Record<string, unknown>).beats as Record<string, unknown>).center_lat as number,
+            center_lng: ((beatAssignment as Record<string, unknown>).beats as Record<string, unknown>).center_lng as number,
+            description: (((beatAssignment as Record<string, unknown>).beats as Record<string, unknown>).address as string) || 'Beat area'
           } : undefined
         }
       })
@@ -855,13 +652,6 @@ export function LiveMonitoring() {
 
     return () => clearInterval(interval)
   }, [])
-
-  // Manual refresh function
-  const handleRefresh = async () => {
-    setManualRefreshing(true)
-    await fetchPersonnelData()
-    setManualRefreshing(false)
-  }
 
   // Calculate statistics
   const stats: PersonnelStats = {
@@ -940,69 +730,16 @@ export function LiveMonitoring() {
     }
   }
 
-  // Manual refresh function (mock)
+  // Manual refresh function
   const handleManualRefresh = async () => {
     if (manualRefreshing) return
     
     setManualRefreshing(true)
     setError(null)
     
-    // Simulate loading delay
-    setTimeout(() => {
-      // Simulate some random status changes
-      setPersonnel(prev => prev.map(person => {
-        const shouldChangeStatus = Math.random() > 0.8 // 20% chance
-        if (shouldChangeStatus) {
-          const statuses = ['alert', 'standby', 'on_duty']
-          const currentIndex = statuses.indexOf(person.status)
-          const newStatus = statuses[(currentIndex + 1) % statuses.length]
-          
-          // Define beat assignments for when personnel go on duty
-          const beatAssignments: Record<string, { name: string, radius: number, description: string }> = {
-            '1': { name: 'Calapan Downtown Beat', radius: 500, description: 'Central business district including city hall, market area, and main commercial streets' },
-            '2': { name: 'Baco Highway Beat', radius: 800, description: 'Major highway intersection with traffic control and vehicle checkpoints' },
-            '3': { name: 'Airport Security Perimeter', radius: 1000, description: 'Airport terminal and runway security with passenger screening areas' },
-            '4': { name: 'Boac Municipal Beat', radius: 550, description: 'Municipal center including government offices and public market area' },
-            '5': { name: 'Romblon Port Beat', radius: 600, description: 'Port area including ferry terminal, cargo facilities, and waterfront security' },
-            '6': { name: 'Mamburao Coastal Beat', radius: 900, description: 'Coastal highway patrol covering main road network and beach area security' },
-            '7': { name: 'Brookes Point Border Beat', radius: 750, description: 'Border security and checkpoint operations with rural patrol areas' },
-            '8': { name: 'Odiongan Town Center Beat', radius: 750, description: 'Town center including municipal hall, church, school zone, and residential areas' }
-          }
-
-          const updatedPerson = {
-            ...person,
-            status: newStatus,
-            status_changed_at: new Date().toISOString(),
-            minutes_since_update: 0
-          }
-
-          // Add or remove beat information based on new status
-          if (newStatus === 'on_duty' && person.latitude && person.longitude) {
-            const beatInfo = beatAssignments[person.id]
-            if (beatInfo) {
-              updatedPerson.beat_name = beatInfo.name
-              updatedPerson.beat_radius = beatInfo.radius
-              updatedPerson.beat_location = {
-                center_lat: person.latitude,
-                center_lng: person.longitude,
-                description: beatInfo.description
-              }
-            }
-          } else if (newStatus !== 'on_duty') {
-            // Remove beat information when not on duty
-            delete updatedPerson.beat_name
-            delete updatedPerson.beat_radius
-            delete updatedPerson.beat_location
-          }
-
-          return updatedPerson
-        }
-        return person
-      }))
-      
-      setLastUpdate(new Date())
-      setManualRefreshing(false)
-    }, 1000)
+    // Refresh data from database
+    await fetchPersonnelData()
+    setManualRefreshing(false)
   }
 
   return (

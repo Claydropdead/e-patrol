@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
     console.log('Successfully fetched audit logs:', auditLogs?.length || 0, 'records')
 
     // Process audit logs to include user names (enhanced lookup from ALL user tables)
-    const userIds = [...new Set((auditLogs || []).map((log: any) => log.changed_by).filter(Boolean))]
+    const userIds = [...new Set((auditLogs || []).map((log: Record<string, unknown>) => log.changed_by).filter(Boolean))]
     
     const [adminUsers, regularUsers, personnelUsers] = await Promise.all([
       // Get admin user names
@@ -150,24 +150,26 @@ export async function GET(request: NextRequest) {
     // Create lookup map for user names (prioritize admin_accounts, then users, then personnel)
     const userNameMap: Record<string, string> = {}
     
-    ;(adminUsers.data || []).forEach((user: any) => {
-      if (user.full_name) userNameMap[user.id] = user.full_name
+    ;(adminUsers.data || []).forEach((user: Record<string, unknown>) => {
+      if (user.full_name && typeof user.full_name === 'string' && typeof user.id === 'string') {
+        userNameMap[user.id] = user.full_name
+      }
     })
     
-    ;(regularUsers.data || []).forEach((user: any) => {
-      if (user.full_name && !userNameMap[user.id]) {
+    ;(regularUsers.data || []).forEach((user: Record<string, unknown>) => {
+      if (user.full_name && typeof user.full_name === 'string' && typeof user.id === 'string' && !userNameMap[user.id]) {
         userNameMap[user.id] = user.full_name
       }
     })
 
-    ;(personnelUsers.data || []).forEach((user: any) => {
-      if (user.full_name && !userNameMap[user.id]) {
+    ;(personnelUsers.data || []).forEach((user: Record<string, unknown>) => {
+      if (user.full_name && typeof user.full_name === 'string' && typeof user.id === 'string' && !userNameMap[user.id]) {
         userNameMap[user.id] = user.full_name
       }
     })
 
     // Return data structure using correct field names with user names
-    const processedLogs = (auditLogs || []).map((log: any) => ({
+    const processedLogs = (auditLogs || []).map((log: Record<string, unknown>) => ({
       id: log.id,
       changed_at: log.changed_at,
       table_name: log.table_name,
@@ -175,7 +177,7 @@ export async function GET(request: NextRequest) {
       old_data: log.old_data,
       new_data: log.new_data,
       changed_by: log.changed_by,
-      changed_by_name: userNameMap[log.changed_by] || null
+      changed_by_name: userNameMap[log.changed_by as string] || null
     }))
 
     return NextResponse.json({

@@ -20,15 +20,6 @@ interface AuditEntry {
   changed_by_name?: string | null
 }
 
-interface AuditStats {
-  totalAuditEntries: number
-  recentActivity: number
-  tableActivity: Array<{
-    table_name: string
-    count: number
-  }>
-}
-
 interface AuditResponse {
   data: AuditEntry[]
   pagination: {
@@ -75,7 +66,6 @@ export function AuditLogsViewer() {
 
   // Separate hook for stats
   const [stats, setStats] = useState<StatsResponse | null>(null)
-  const [statsLoading, setStatsLoading] = useState(true)
 
   // Fetch stats function
   const fetchStats = async () => {
@@ -98,8 +88,6 @@ export function AuditLogsViewer() {
       }
     } catch (error) {
       console.warn('Failed to fetch stats:', error)
-    } finally {
-      setStatsLoading(false)
     }
   }
 
@@ -219,54 +207,6 @@ export function AuditLogsViewer() {
     }
   }
 
-  // Helper function to format detailed tooltip content
-  const formatTooltipContent = (data: Record<string, unknown> | null, type: 'old' | 'new'): string => {
-    if (!data) {
-      return type === 'old' ? 'No previous data (new record)' : 'No updated data available'
-    }
-
-    const fieldLabels: Record<string, string> = {
-      'name': 'Name',
-      'email': 'Email Address',
-      'role': 'Role',
-      'username': 'Username',
-      'first_name': 'First Name',
-      'last_name': 'Last Name',
-      'title': 'Job Title',
-      'full_name': 'Full Name',
-      'rank': 'Rank',
-      'badge_number': 'Badge Number',
-      'phone': 'Phone Number',
-      'is_active': 'Status',
-      'province': 'Province',
-      'unit': 'Unit',
-      'sub_unit': 'Sub Unit',
-      'contact_number': 'Contact Number'
-    }
-
-    const relevantFields = Object.keys(data).filter(field => 
-      data[field] !== undefined && 
-      data[field] !== null && 
-      !['id', 'password', 'created_at', 'updated_at', 'created_by'].includes(field)
-    )
-
-    if (relevantFields.length === 0) return 'No relevant data to display'
-
-    return relevantFields
-      .map(field => {
-        const label = fieldLabels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-        let value = data[field]
-        
-        // Format boolean values
-        if (typeof value === 'boolean') {
-          value = value ? 'Active' : 'Inactive'
-        }
-        
-        return `${label}: ${value}`
-      })
-      .join('\n')
-  }
-
   // Helper function to format clean data for expanded view (non-JSON)
   const formatCleanData = (data: Record<string, unknown> | null): React.ReactNode => {
     if (!data) return null
@@ -343,7 +283,7 @@ export function AuditLogsViewer() {
       refresh()
       fetchStats()
       toast.success('Audit logs refreshed')
-    } catch (err) {
+    } catch {
       toast.error('Failed to refresh audit logs')
     } finally {
       setRefreshing(false)

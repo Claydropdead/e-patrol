@@ -154,14 +154,14 @@ export function ManageUsers() {
       setLastRefresh(new Date())
     }, 120000) // Changed from 30 seconds to 2 minutes
     return () => clearInterval(interval)
-  }, [autoRefresh]) // Removed refresh dependency to prevent recreation
+  }, [autoRefresh, refresh]) // Added refresh dependency
 
   // Manual refresh function for button click
   const handleManualRefresh = useCallback(() => {
     refresh()
     setLastRefresh(new Date())
     toast.success('Users data refreshed')
-  }, [])
+  }, [refresh]) // Added refresh dependency
 
   const getRoleInfo = (role: AdminRole) => {
     const roleConfig = {

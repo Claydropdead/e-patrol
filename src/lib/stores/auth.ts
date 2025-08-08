@@ -201,7 +201,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return data.session
       }
       return null
-    } catch (error) {
+    } catch {
       set({ error: 'Session refresh failed' })
       return null
     }
@@ -227,7 +227,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       
       return session
-    } catch (error) {
+    } catch {
       return null
     }
   },
