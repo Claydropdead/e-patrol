@@ -1,10 +1,9 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useApiData } from '@/lib/hooks/useApiData'
 import { useAuthStore } from '@/lib/stores/auth'
 import { toast } from 'sonner'
 import { RefreshCw, Activity, Calendar, Database, User, Filter, X, ChevronDown, ChevronUp, Eye } from 'lucide-react'
@@ -49,20 +48,57 @@ export function AuditLogsViewer() {
   const [refreshing, setRefreshing] = useState(false)
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
 
-  // Use stable API hook for audit logs - fetch all data without filters
-  const {
-    data: auditResponse,
-    loading,
-    error,
-    refresh
-  } = useApiData<AuditResponse>({
-    endpoint: '/api/audit',
-    params: {
-      page: '1',
-      limit: '100' // Fetch more records to enable client-side filtering
-    },
-    onError: (errorMsg) => toast.error(`Audit logs error: ${errorMsg}`)
-  })
+  // Direct state management instead of useApiData
+  const [auditResponse, setAuditResponse] = useState<AuditResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch audit logs function
+  const fetchAuditLogs = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const session = await useAuthStore.getState().getValidSession()
+      if (!session) {
+        throw new Error('Authentication required')
+      }
+
+      const response = await fetch('/api/audit?page=1&limit=100', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Cache-Control': 'no-cache'
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      if (result.error) {
+        throw new Error(result.error)
+      }
+
+      setAuditResponse(result)
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch audit logs'
+      setError(errorMessage)
+      toast.error(`Audit logs error: ${errorMessage}`)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // Initial fetch
+  useEffect(() => {
+    fetchAuditLogs()
+  }, [fetchAuditLogs])
+
+  // Manual refresh function
+  const refresh = useCallback(() => {
+    fetchAuditLogs()
+  }, [fetchAuditLogs])
 
   // Separate hook for stats
   const [stats, setStats] = useState<StatsResponse | null>(null)
@@ -94,7 +130,7 @@ export function AuditLogsViewer() {
   const auditLogs = auditResponse?.data || []
   
   // Client-side filtering
-  const filteredLogs = auditLogs.filter(log => {
+  const filteredLogs = auditLogs.filter((log: AuditEntry) => {
     // Filter by table
     if (filters.table !== 'all' && log.table_name !== filters.table) {
       return false
@@ -495,7 +531,7 @@ export function AuditLogsViewer() {
                   </td>
                 </tr>
               ) : (
-                paginatedLogs.map((log, index) => {
+                paginatedLogs.map((log: AuditEntry, index: number) => {
                   const changes = formatAuditChanges(log)
                   const isExpanded = expandedRow === log.id
                   return (

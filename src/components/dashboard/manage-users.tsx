@@ -29,7 +29,6 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/lib/stores/auth'
-import { useApiData } from '@/lib/hooks/useApiData'
 import { MIMAROPA_STRUCTURE } from '@/lib/constants/mimaropa'
 import type { AdminRole } from '@/lib/types/database'
 
@@ -84,23 +83,64 @@ export function ManageUsers() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   
-  // Use stable API hook without reactive dependencies
-  const {
-    data: usersData,
-    loading,
-    refresh
-  } = useApiData<{ adminUsers: AdminUser[]; personnelUsers: PersonnelUser[] }>({
-    endpoint: '/api/users',
-    params: { type: 'all' }, // Remove reactive params
-    onError: (errorMsg) => toast.error(errorMsg as string)
-  })
+  // Direct state management instead of useApiData
+  const [usersData, setUsersData] = useState<{ adminUsers: AdminUser[]; personnelUsers: PersonnelUser[] } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch users function
+  const fetchUsers = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const session = await useAuthStore.getState().getValidSession()
+      if (!session) {
+        throw new Error('Authentication required')
+      }
+
+      const response = await fetch('/api/users?type=all', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Cache-Control': 'no-cache'
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      if (result.error) {
+        throw new Error(result.error)
+      }
+
+      setUsersData(result)
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch users'
+      setError(errorMessage)
+      toast.error(errorMessage)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // Initial fetch
+  useEffect(() => {
+    fetchUsers()
+  }, [fetchUsers])
+
+  // Manual refresh function
+  const refresh = useCallback(() => {
+    fetchUsers()
+  }, [fetchUsers])
 
   // Extract and filter users from API response locally
   const allAdminUsers = usersData?.adminUsers || []
   const allPersonnelUsers = usersData?.personnelUsers || []
   
   // Filter users locally instead of via API
-  const adminUsers = allAdminUsers.filter(user => {
+  const adminUsers = allAdminUsers.filter((user: AdminUser) => {
     const matchesSearch = !searchTerm || 
       user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -113,7 +153,7 @@ export function ManageUsers() {
     return matchesSearch && matchesStatus
   })
   
-  const personnelUsers = allPersonnelUsers.filter(user => {
+  const personnelUsers = allPersonnelUsers.filter((user: PersonnelUser) => {
     const matchesSearch = !searchTerm || 
       user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -486,7 +526,7 @@ export function ManageUsers() {
     )
   }
 
-  const filteredAdminUsers = adminUsers.filter(user => {
+  const filteredAdminUsers = adminUsers.filter((user: AdminUser) => {
     const matchesSearch = user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.rank.toLowerCase().includes(searchTerm.toLowerCase())
@@ -496,7 +536,7 @@ export function ManageUsers() {
     return matchesSearch && matchesStatus
   })
 
-  const filteredPersonnelUsers = personnelUsers.filter(user => {
+  const filteredPersonnelUsers = personnelUsers.filter((user: PersonnelUser) => {
     const matchesSearch = user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          user.rank.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -548,8 +588,8 @@ export function ManageUsers() {
   const handleDeleteUser = async (userId: string, userType: UserType) => {
     // Get the user data to determine current status
     const user = userType === 'admin' 
-      ? adminUsers.find(u => u.id === userId)
-      : personnelUsers.find(u => u.id === userId)
+      ? adminUsers.find((u: AdminUser) => u.id === userId)
+      : personnelUsers.find((u: PersonnelUser) => u.id === userId)
 
     if (!user) {
       toast.error('User not found')
