@@ -102,11 +102,40 @@ function MiniMap({ personnel, beats, onMapReady }: {
           })
         }
 
-        // Add default terrain layer (OpenStreetMap)
-        baseLayers['Terrain'].addTo(newMap)
+        // Add default layer (OpenStreetMap)
+        baseLayers['OpenStreetMap'].addTo(newMap)
 
-        // Add layer control for switching between terrains
-        L.control.layers(baseLayers).addTo(newMap)
+        // Add layer control for switching between terrains - positioned on left side
+        const layerControl = L.control.layers(baseLayers, {}, { 
+          position: 'topleft',
+          collapsed: false 
+        }).addTo(newMap)
+
+        // Add custom styling to the layer control
+        const styleElement = document.createElement('style')
+        styleElement.textContent = `
+          .leaflet-control-layers {
+            margin-top: 10px !important;
+            margin-left: 10px !important;
+            background: rgba(255, 255, 255, 0.95) !important;
+            border-radius: 8px !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+            padding: 8px !important;
+            font-size: 12px !important;
+            max-width: 200px !important;
+          }
+          .leaflet-control-layers-base label {
+            margin: 4px 0 !important;
+            font-weight: 500 !important;
+            cursor: pointer !important;
+            display: flex !important;
+            align-items: center !important;
+          }
+          .leaflet-control-layers-base input {
+            margin-right: 6px !important;
+          }
+        `
+        document.head.appendChild(styleElement)
 
         // Add fullscreen control
         const FullscreenControl = L.Control.extend({
@@ -409,18 +438,22 @@ function MiniMap({ personnel, beats, onMapReady }: {
               html: `
                 <div style="
                   background-color: ${color};
-                  width: 16px;
-                  height: 16px;
+                  width: 24px;
+                  height: 24px;
                   border-radius: 50%;
-                  border: 3px solid white;
+                  border: 2px solid white;
                   box-shadow: 0 2px 6px rgba(0,0,0,0.4);
                   position: relative;
                   z-index: 1000;
-                "></div>
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-size: 14px;
+                ">👮</div>
               `,
               className: 'custom-mini-marker',
-              iconSize: [16, 16],
-              iconAnchor: [8, 8]
+              iconSize: [24, 24],
+              iconAnchor: [12, 12]
             })
 
             const marker = L.marker([lat, lng], { icon: customIcon })
@@ -861,7 +894,7 @@ export function LiveMonitoring() {
                         <hr className="my-2 border-gray-200" />
                         <div className="text-gray-600">
                           <p className="font-medium mb-1">Map Controls:</p>
-                          <p className="text-xs">• Layer switcher (top-right)</p>
+                          <p className="text-xs">• Layer switcher (top-left)</p>
                           <p className="text-xs">• Fullscreen toggle (⛶)</p>
                           <p className="text-xs">• 5 terrain options available</p>
                         </div>
