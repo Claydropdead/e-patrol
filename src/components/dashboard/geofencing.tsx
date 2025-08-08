@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { 
   Shield, 
   MapPin, 
@@ -14,7 +14,12 @@ import {
   Timer,
   Activity,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  RefreshCw,
+  Filter,
+  X,
+  AlertCircle,
+  Users
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,7 +29,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useAuthStore } from '@/lib/stores/auth'
 import { MIMAROPA_STRUCTURE } from '@/lib/constants/mimaropa'
+import { toast } from 'sonner'
 
 interface GeofenceBeat {
   id: string
@@ -183,6 +190,7 @@ const calculateDutyDuration = (startTime?: string, endTime?: string) => {
 
 // Helper function to get violation details for a specific beat
 export function GeofencingContent() {
+  // Tab and filter states
   const [selectedTab, setSelectedTab] = useState('beats')
   const [statusFilter, setStatusFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
@@ -190,165 +198,187 @@ export function GeofencingContent() {
   const [selectedSubUnit, setSelectedSubUnit] = useState('all')
   const [sortBy, setSortBy] = useState<'name' | 'unit' | 'status'>('name')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
-  const [isCreateBeatOpen, setIsCreateBeatOpen] = useState(false)
-  const [selectedBeat, setSelectedBeat] = useState<GeofenceBeat | null>(null)
+  
+  // Data states with loading and error handling
   const [beats, setBeats] = useState<GeofenceBeat[]>([])
   const [violations, setViolations] = useState<Violation[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalBeats, setTotalBeats] = useState(0)
+  const ITEMS_PER_PAGE = 20
+  
+  // Dialog states
+  const [isCreateBeatOpen, setIsCreateBeatOpen] = useState(false)
+  const [selectedBeat, setSelectedBeat] = useState<GeofenceBeat | null>(null)
+  
+  // Last refresh tracking for manual refresh only
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
 
-  // Fetch beats and personnel data from API
-  const fetchData = async () => {
+  // Optimized data fetching with pagination and error handling
+  const fetchData = useCallback(async (page = 1, showLoading = true) => {
     try {
-      
+      if (showLoading) setLoading(true)
+      setError(null)
+
+      const session = await useAuthStore.getState().getValidSession()
+      if (!session) {
+        throw new Error('Authentication required')
+      }
+
+      // Build query parameters for server-side filtering and pagination
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: ITEMS_PER_PAGE.toString(),
+        search: searchTerm,
+        unit: selectedUnit !== 'all' ? selectedUnit : '',
+        subUnit: selectedSubUnit !== 'all' ? selectedSubUnit : '',
+        status: statusFilter !== 'all' ? statusFilter : ''
+      })
+
       const [beatsResponse, beatPersonnelResponse] = await Promise.all([
-        fetch('/api/beats'),
-        fetch('/api/beat-personnel')
+        fetch(`/api/beats?${params}`, {
+          headers: { 'Authorization': `Bearer ${session.access_token}` }
+        }),
+        fetch('/api/beat-personnel', {
+          headers: { 'Authorization': `Bearer ${session.access_token}` }
+        })
       ])
       
-      if (!beatsResponse.ok || !beatPersonnelResponse.ok) {
-        throw new Error('Failed to fetch data')
+      if (!beatsResponse.ok) {
+        throw new Error(`Failed to fetch beats: ${beatsResponse.statusText}`)
+      }
+      if (!beatPersonnelResponse.ok) {
+        throw new Error(`Failed to fetch personnel data: ${beatPersonnelResponse.statusText}`)
       }
       
       const beatsData = await beatsResponse.json()
       const beatPersonnelData = await beatPersonnelResponse.json()
       
-      // Transform database data to component format
-      const transformedBeats: GeofenceBeat[] = beatsData.map((beat: Record<string, unknown>) => {
-        const assignedPersonnel = beatPersonnelData
-          .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id)
-          .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>).full_name as string)
-        
-        const pendingPersonnel = beatPersonnelData
-          .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id && bp.status === 'pending')
-          .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>).full_name as string)
-        
-        const acceptedPersonnel = beatPersonnelData
-          .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id && bp.status === 'accepted')
-          .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>).full_name as string)
-        
-        return {
-          id: beat.id as string,
-          name: beat.name as string,
-          location: {
-            lat: beat.center_lat as number,
-            lng: beat.center_lng as number,
-            address: (beat.address as string) || `${beat.name as string} Area`
-          },
-          radius: beat.radius_meters as number,
-          province: (beat.unit as string)?.includes('PPO') ? (beat.unit as string).replace(' PPO', '') : 'MIMAROPA',
-          unit: beat.unit as string,
-          subUnit: beat.sub_unit as string,
-          assignedPersonnel,
-          status: 'active' as const,
-          createdAt: beat.created_at as string,
-          violations: 0, // TODO: implement violations tracking
-          lastActivity: beat.created_at as string,
-          beatStatus: acceptedPersonnel.length > 0 ? 'on_duty' : 
-                     pendingPersonnel.length > 0 ? 'pending' : 'completed',
-          assignedPersonnelDetails: beatPersonnelData
+      // Set total for pagination
+      setTotalBeats(beatsData.pagination?.total || beatsData.length)
+      
+      // Transform database data to component format with error handling
+      const transformedBeats: GeofenceBeat[] = (beatsData.data || beatsData).map((beat: Record<string, unknown>) => {
+        try {
+          const assignedPersonnel = beatPersonnelData
             .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id)
-            .map((bp: Record<string, unknown>) => ({
-              id: (bp.personnel as Record<string, unknown>).id as string,
-              name: (bp.personnel as Record<string, unknown>).full_name as string,
-              rank: (bp.personnel as Record<string, unknown>).rank as string,
-              email: (bp.personnel as Record<string, unknown>).email as string,
-              status: bp.status as string,
-              assignedAt: bp.assigned_at as string,
-              acceptedAt: bp.accepted_at as string
-            })),
-          dutyStartTime: beat.created_at as string,
-          estimatedDuration: '8 hours'
+            .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>)?.full_name as string)
+            .filter(Boolean)
+          
+          const pendingPersonnel = beatPersonnelData
+            .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id && bp.status === 'pending')
+            .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>)?.full_name as string)
+            .filter(Boolean)
+          
+          const acceptedPersonnel = beatPersonnelData
+            .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id && bp.status === 'accepted')
+            .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>)?.full_name as string)
+            .filter(Boolean)
+          
+          return {
+            id: beat.id as string,
+            name: beat.name as string,
+            location: {
+              lat: beat.center_lat as number,
+              lng: beat.center_lng as number,
+              address: (beat.address as string) || `${beat.name as string} Area`
+            },
+            radius: beat.radius_meters as number,
+            province: (beat.unit as string)?.includes('PPO') ? (beat.unit as string).replace(' PPO', '') : 'MIMAROPA',
+            unit: beat.unit as string,
+            subUnit: beat.sub_unit as string,
+            assignedPersonnel,
+            status: 'active' as const,
+            createdAt: beat.created_at as string,
+            violations: 0, // TODO: implement violations tracking
+            lastActivity: beat.updated_at as string || beat.created_at as string,
+            beatStatus: acceptedPersonnel.length > 0 ? 'on_duty' : 
+                       pendingPersonnel.length > 0 ? 'pending' : 'completed',
+            assignedPersonnelDetails: beatPersonnelData
+              .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id)
+              .map((bp: Record<string, unknown>) => ({
+                id: (bp.personnel as Record<string, unknown>)?.id as string,
+                name: (bp.personnel as Record<string, unknown>)?.full_name as string,
+                rank: (bp.personnel as Record<string, unknown>)?.rank as string,
+                email: (bp.personnel as Record<string, unknown>)?.email as string,
+                status: bp.status as string,
+                assignedAt: bp.assigned_at as string,
+                acceptedAt: bp.accepted_at as string
+              }))
+              .filter((detail: any) => detail.id && detail.name),
+            dutyStartTime: beat.created_at as string,
+            estimatedDuration: '8 hours'
+          }
+        } catch (err) {
+          console.error('Error transforming beat data:', err, beat)
+          // Return a minimal beat object in case of error
+          return {
+            id: beat.id as string || `error-${Date.now()}`,
+            name: beat.name as string || 'Unknown Beat',
+            location: { lat: 0, lng: 0, address: 'Unknown Location' },
+            radius: 500,
+            province: 'Unknown',
+            unit: 'Unknown Unit',
+            subUnit: 'Unknown Sub-unit',
+            assignedPersonnel: [],
+            status: 'active' as const,
+            createdAt: beat.created_at as string || new Date().toISOString(),
+            violations: 0,
+            lastActivity: new Date().toISOString(),
+            beatStatus: 'pending' as const
+          }
         }
       })
       
       setBeats(transformedBeats)
       setViolations([]) // TODO: implement violations from database
+      setLastRefresh(new Date())
+      
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch data'
+      setError(errorMessage)
       console.error('Failed to fetch data:', err)
+      toast.error(`Error loading beats: ${errorMessage}`)
+    } finally {
+      if (showLoading) setLoading(false)
+      setRefreshing(false)
     }
-  }
+  }, [searchTerm, selectedUnit, selectedSubUnit, statusFilter])
+
+  // Manual refresh function
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    await fetchData(currentPage, false)
+  }, [fetchData, currentPage])
 
   // Initial data load
   useEffect(() => {
-    fetchData()
-  }, [])
+    fetchData(1)
+  }, [fetchData])
 
-  // Use refs to avoid stale closures and prevent infinite loops
-  const beatsRef = useRef(beats)
-  const violationsRef = useRef(violations)
-  const violationCounterRef = useRef(0)
-  
-  // Keep refs updated
+  // Reset pagination when filters change
   useEffect(() => {
-    beatsRef.current = beats
-  }, [beats])
-  
-  useEffect(() => {
-    violationsRef.current = violations
-  }, [violations])
-  // Simulate real-time violation detection - ONLY for radius exit notifications
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Simulate random radius exit detection for notification purposes
-      if (Math.random() > 0.95) { // Reduced frequency since it's only for exit notifications
-        setBeats(currentBeats => {
-          const activeBeat = currentBeats.find(b => b.beatStatus === 'on_duty')
-          if (activeBeat && activeBeat.assignedPersonnel.length > 0) {
-            // Calculate a position outside the beat radius
-            const radiusInDegrees = activeBeat.radius / 111000 // Rough conversion to degrees
-            const exitDistance = activeBeat.radius + Math.floor(Math.random() * 200) + 50 // At least 50m outside radius
-            
-            const newViolation: Violation = {
-              id: `v_${Date.now()}_${++violationCounterRef.current}`,
-              beatId: activeBeat.id,
-              beatName: activeBeat.name,
-              personnelName: activeBeat.assignedPersonnel[Math.floor(Math.random() * activeBeat.assignedPersonnel.length)],
-              personnelId: `p_${Date.now()}_${violationCounterRef.current}`,
-              type: 'exit', // Only exit violations for notifications
-              timestamp: new Date().toISOString(),
-              location: {
-                lat: activeBeat.location.lat + (Math.random() - 0.5) * radiusInDegrees * 2,
-                lng: activeBeat.location.lng + (Math.random() - 0.5) * radiusInDegrees * 2
-              },
-              status: 'pending',
-              distanceFromCenter: exitDistance,
-              notificationSent: true
-            }
-            
-            // Update all state in batch to prevent cascading re-renders
-            setViolations(prev => [newViolation, ...prev])
-            
-            // Update beat violation count and return updated beats
-            return currentBeats.map(beat => 
-              beat.id === activeBeat.id 
-                ? { ...beat, violations: beat.violations + 1 }
-                : beat
-            )
-          }
-          return currentBeats // Return unchanged if no active beat
-        })
-      }
-    }, 20000) // Check every 20 seconds for exit notifications
+    setCurrentPage(1)
+  }, [searchTerm, selectedUnit, selectedSubUnit, statusFilter])
 
-    return () => clearInterval(interval)
-  }, []) // ✅ FIXED: Empty dependency array
+  // Memoized filtered and sorted beats for better performance
+  const { filteredBeats, totalPages } = useMemo(() => {
+    // Server-side pagination means we use the beats as-is from API
+    const total = Math.ceil(totalBeats / ITEMS_PER_PAGE)
+    return {
+      filteredBeats: beats,
+      totalPages: total
+    }
+  }, [beats, totalBeats])
 
-  // Simulate real-time updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Update last activity timestamps randomly
-      setBeats(prev => prev.map(beat => ({
-        ...beat,
-        lastActivity: Math.random() > 0.7 ? 'Just now' : beat.lastActivity
-      })))
-    }, 10000) // Update every 10 seconds
-
-    return () => clearInterval(interval)
-  }, [])
-
-  // Get unique units and sub-units from beats data
-  const units = React.useMemo(() => {
+  // Memoized unique units and sub-units
+  const units = useMemo(() => {
     try {
-      const uniqueUnits = [...new Set(beats.map(beat => beat.unit))]
+      const uniqueUnits = [...new Set(beats.map(beat => beat.unit).filter(Boolean))]
       return uniqueUnits.sort()
     } catch (error) {
       console.error('Error getting units:', error)
@@ -356,13 +386,13 @@ export function GeofencingContent() {
     }
   }, [beats])
 
-  const subUnits = React.useMemo(() => {
+  const subUnits = useMemo(() => {
     try {
       let filteredBeats = beats
       if (selectedUnit !== 'all') {
         filteredBeats = beats.filter(beat => beat.unit === selectedUnit)
       }
-      const uniqueSubUnits = [...new Set(filteredBeats.map(beat => beat.subUnit))]
+      const uniqueSubUnits = [...new Set(filteredBeats.map(beat => beat.subUnit).filter(Boolean))]
       return uniqueSubUnits.sort()
     } catch (error) {
       console.error('Error getting sub-units:', error)
@@ -370,239 +400,452 @@ export function GeofencingContent() {
     }
   }, [beats, selectedUnit])
 
-  const filteredBeats = React.useMemo(() => {
-    try {
-      const filtered = beats.filter(beat => {
-        const matchesSearch = beat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                             beat.location.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                             beat.assignedPersonnel.some(person => person.toLowerCase().includes(searchTerm.toLowerCase()))
-        const matchesUnit = selectedUnit === 'all' || beat.unit === selectedUnit
-        const matchesSubUnit = selectedSubUnit === 'all' || beat.subUnit === selectedSubUnit
-        
-        // Status filtering
-        let matchesStatus = true
-        if (statusFilter === 'on-duty') {
-          matchesStatus = beat.beatStatus === 'on_duty'
-        } else if (statusFilter === 'pending') {
-          matchesStatus = beat.beatStatus === 'pending'
-        } else if (statusFilter === 'completed') {
-          matchesStatus = beat.beatStatus === 'completed'
-        }
-        
-        return matchesSearch && matchesUnit && matchesSubUnit && matchesStatus
-      })
+  // Pagination handlers
+  const handlePageChange = useCallback((page: number) => {
+    setCurrentPage(page)
+    fetchData(page, false)
+  }, [fetchData])
 
-      // Sort beats
-      const sorted = [...filtered].sort((a, b) => {
-        let aValue: string | number, bValue: string | number
-        
-        switch (sortBy) {
-          case 'name':
-            aValue = a.name.toLowerCase()
-            bValue = b.name.toLowerCase()
-            break
-          case 'unit':
-            aValue = a.unit.toLowerCase()
-            bValue = b.unit.toLowerCase()
-            break
-          case 'status':
-            aValue = a.status
-            bValue = b.status
-            break
-          default:
-            aValue = a.name.toLowerCase()
-            bValue = b.name.toLowerCase()
-        }
-        
-        if (sortOrder === 'asc') {
-          return aValue < bValue ? -1 : aValue > bValue ? 1 : 0
-        } else {
-          return aValue > bValue ? -1 : aValue < bValue ? 1 : 0
-        }
-      })
+  // Filter change handlers
+  const handleUnitChange = useCallback((value: string) => {
+    setSelectedUnit(value)
+    setSelectedSubUnit('all') // Reset sub-unit when unit changes
+  }, [])
 
-      return sorted
-    } catch (error) {
-      console.error('Error filtering beats:', error)
-      return beats
+  // Memoized stats for dashboard
+  const stats = useMemo(() => {
+    const activeBeats = beats.filter(beat => beat.beatStatus === 'on_duty').length
+    const pendingBeats = beats.filter(beat => beat.beatStatus === 'pending').length
+    const totalPersonnel = beats.reduce((sum, beat) => sum + beat.assignedPersonnel.length, 0)
+    
+    return {
+      totalBeats: totalBeats,
+      activeBeats,
+      pendingBeats,
+      totalPersonnel
     }
-  }, [beats, searchTerm, selectedUnit, selectedSubUnit, statusFilter, sortBy, sortOrder])
+  }, [beats, totalBeats])
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Geofencing Management</h1>
-          <p className="text-gray-600">Manage patrol beats and monitor personnel movement</p>
+      {/* Header with Stats */}
+      <div className="flex flex-col space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Geofencing Management</h1>
+            <p className="text-gray-600">Manage patrol beats and monitor personnel movement</p>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="flex items-center space-x-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </Button>
+            </div>
+            <Dialog open={isCreateBeatOpen} onOpenChange={setIsCreateBeatOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-blue-600 hover:bg-blue-700">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Beat
+                </Button>
+              </DialogTrigger>
+              <CreateBeatDialog 
+                onClose={() => setIsCreateBeatOpen(false)} 
+                onBeatCreated={() => {
+                  setIsCreateBeatOpen(false)
+                  handleRefresh()
+                }}
+              />
+            </Dialog>
+          </div>
         </div>
-        <Dialog open={isCreateBeatOpen} onOpenChange={setIsCreateBeatOpen}>
-          <DialogTrigger asChild>
-            <Button className="mt-4 sm:mt-0">
-              <Plus className="h-4 w-4 mr-2" />
-              Create Beat
-            </Button>
-          </DialogTrigger>
-          <CreateBeatDialog 
-            onClose={() => setIsCreateBeatOpen(false)} 
-            onBeatCreated={fetchData}
-          />
-        </Dialog>
-      </div>
 
-      {/* Search and Filters */}
-      <div className="flex flex-col lg:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-          <Input
-            placeholder="Search beats, locations, or personnel..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <Select value={selectedUnit} onValueChange={(value) => {
-            setSelectedUnit(value)
-            setSelectedSubUnit('all') // Reset sub-unit when unit changes
-          }}>
-            <SelectTrigger className="w-full sm:w-48">
-              <SelectValue placeholder="All Units" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Units</SelectItem>
-              {units.map(unit => (
-                <SelectItem key={unit} value={unit}>
-                  {unit}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={selectedSubUnit} onValueChange={setSelectedSubUnit}>
-            <SelectTrigger className="w-full sm:w-48">
-              <SelectValue placeholder="All Sub-Units" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Sub-Units</SelectItem>
-              {subUnits.map(subUnit => (
-                <SelectItem key={subUnit} value={subUnit}>
-                  {subUnit}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full sm:w-40">
-              <SelectValue placeholder="Status Filter" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Beats</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="on-duty">On Duty</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <Tabs value={selectedTab} onValueChange={setSelectedTab}>
-        <TabsList>
-          <TabsTrigger value="beats">Patrol Beats</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="beats" className="space-y-4">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Shield className="h-5 w-5" />
-                Patrol Beats Overview
-              </CardTitle>
-              <CardDescription>
-                Manage and monitor patrol beats across MIMAROPA region
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {filteredBeats.length === 0 ? (
-                <div className="text-center py-12">
-                  <MapPin className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No beats found</h3>
-                  <p className="text-gray-600">Try adjusting your search criteria or create a new beat.</p>
+            <CardContent className="p-4">
+              <div className="flex items-center space-x-2">
+                <Shield className="h-5 w-5 text-blue-600" />
+                <div>
+                  <p className="text-sm text-gray-600">Total Beats</p>
+                  <p className="text-2xl font-bold text-gray-900">{stats.totalBeats}</p>
                 </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className="text-left py-3 px-2 font-medium text-gray-700">
-                          <button 
-                            className="flex items-center gap-1 hover:text-gray-900"
-                            onClick={() => {
-                              if (sortBy === 'name') {
-                                setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
-                              } else {
-                                setSortBy('name')
-                                setSortOrder('asc')
-                              }
-                            }}
-                          >
-                            Beat Info
-                            {sortBy === 'name' && (
-                              sortOrder === 'asc' ? 
-                                <ChevronUp className="h-4 w-4" /> : 
-                                <ChevronDown className="h-4 w-4" />
-                            )}
-                          </button>
-                        </th>
-                        <th className="text-left py-3 px-2 font-medium text-gray-700">Location</th>
-                        <th className="text-left py-3 px-2 font-medium text-gray-700">
-                          <button 
-                            className="flex items-center gap-1 hover:text-gray-900"
-                            onClick={() => {
-                              if (sortBy === 'status') {
-                                setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
-                              } else {
-                                setSortBy('status')
-                                setSortOrder('asc')
-                              }
-                            }}
-                          >
-                            Beat Status
-                            {sortBy === 'status' && (
-                              sortOrder === 'asc' ? 
-                                <ChevronUp className="h-4 w-4" /> : 
-                                <ChevronDown className="h-4 w-4" />
-                            )}
-                          </button>
-                        </th>
-                        <th className="text-left py-3 px-2 font-medium text-gray-700">Personnel</th>
-                        <th className="text-left py-3 px-2 font-medium text-gray-700">Duty Schedule</th>
-                        <th className="text-center py-3 px-2 font-medium text-gray-700">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredBeats.map(beat => (
-                        <BeatTableRow 
-                          key={beat.id} 
-                          beat={beat} 
-                          onEdit={() => setSelectedBeat(beat)}
-                          onView={() => setSelectedBeat(beat)}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              </div>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center space-x-2">
+                <Activity className="h-5 w-5 text-green-600" />
+                <div>
+                  <p className="text-sm text-gray-600">Active Beats</p>
+                  <p className="text-2xl font-bold text-green-600">{stats.activeBeats}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center space-x-2">
+                <Timer className="h-5 w-5 text-yellow-600" />
+                <div>
+                  <p className="text-sm text-gray-600">Pending</p>
+                  <p className="text-2xl font-bold text-yellow-600">{stats.pendingBeats}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center space-x-2">
+                <Users className="h-5 w-5 text-purple-600" />
+                <div>
+                  <p className="text-sm text-gray-600">Personnel</p>
+                  <p className="text-2xl font-bold text-purple-600">{stats.totalPersonnel}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Last refresh info */}
+        <div className="text-xs text-gray-500 flex items-center space-x-2">
+          <Clock className="h-3 w-3" />
+          <span>Last updated: {lastRefresh.toLocaleTimeString()}</span>
+        </div>
+      </div>
+
+      {/* Error State */}
+      {error && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4">
+            <div className="flex items-center space-x-2 text-red-600">
+              <AlertCircle className="h-5 w-5" />
+              <p className="font-medium">Error loading beats</p>
+            </div>
+            <p className="text-sm text-red-600 mt-1">{error}</p>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleRefresh}
+              className="mt-3 border-red-300 text-red-600 hover:bg-red-100"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Search and Filters */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search beats, locations, or personnel..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Select value={selectedUnit} onValueChange={handleUnitChange}>
+                <SelectTrigger className="w-full sm:w-48">
+                  <SelectValue placeholder="All Units" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Units</SelectItem>
+                  {units.map(unit => (
+                    <SelectItem key={unit} value={unit}>
+                      {unit}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={selectedSubUnit} onValueChange={setSelectedSubUnit}>
+                <SelectTrigger className="w-full sm:w-48">
+                  <SelectValue placeholder="All Sub-Units" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sub-Units</SelectItem>
+                  {subUnits.map(subUnit => (
+                    <SelectItem key={subUnit} value={subUnit}>
+                      {subUnit}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-full sm:w-40">
+                  <SelectValue placeholder="Status Filter" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Beats</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="on-duty">On Duty</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+              {(searchTerm || selectedUnit !== 'all' || selectedSubUnit !== 'all' || statusFilter !== 'all') && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSearchTerm('')
+                    setSelectedUnit('all')
+                    setSelectedSubUnit('all')
+                    setStatusFilter('all')
+                  }}
+                  className="flex items-center space-x-1"
+                >
+                  <X className="h-4 w-4" />
+                  <span>Clear</span>
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Loading State */}
+      {loading && (
+        <Card>
+          <CardContent className="p-8">
+            <div className="flex items-center justify-center space-x-2">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+              <p className="text-gray-600">Loading patrol beats...</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Beats Content */}
+      {!loading && (
+        <>
+          {/* Tabs */}
+          <Tabs value={selectedTab} onValueChange={setSelectedTab}>
+            <TabsList>
+              <TabsTrigger value="beats">
+                Patrol Beats ({filteredBeats.length})
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="beats" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Shield className="h-5 w-5" />
+                    Patrol Beats Overview
+                  </CardTitle>
+                  <CardDescription>
+                    Manage and monitor patrol beats across MIMAROPA region
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {filteredBeats.length === 0 ? (
+                    <div className="text-center py-12">
+                      <MapPin className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">
+                        {searchTerm || selectedUnit !== 'all' || selectedSubUnit !== 'all' || statusFilter !== 'all' 
+                          ? 'No beats match your filters' 
+                          : 'No beats found'
+                        }
+                      </h3>
+                      <p className="text-gray-600 mb-4">
+                        {searchTerm || selectedUnit !== 'all' || selectedSubUnit !== 'all' || statusFilter !== 'all' 
+                          ? 'Try adjusting your search criteria or clear filters.' 
+                          : 'Create your first patrol beat to get started.'
+                        }
+                      </p>
+                      {searchTerm || selectedUnit !== 'all' || selectedSubUnit !== 'all' || statusFilter !== 'all' ? (
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setSearchTerm('')
+                            setSelectedUnit('all')
+                            setSelectedSubUnit('all')
+                            setStatusFilter('all')
+                          }}
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Clear Filters
+                        </Button>
+                      ) : (
+                        <Button onClick={() => setIsCreateBeatOpen(true)}>
+                          <Plus className="h-4 w-4 mr-2" />
+                          Create Your First Beat
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      {/* Beats Table */}
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="border-b border-gray-200">
+                              <th className="text-left py-3 px-2 font-medium text-gray-700">
+                                <button 
+                                  className="flex items-center gap-1 hover:text-gray-900 transition-colors"
+                                  onClick={() => {
+                                    if (sortBy === 'name') {
+                                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+                                    } else {
+                                      setSortBy('name')
+                                      setSortOrder('asc')
+                                    }
+                                  }}
+                                >
+                                  Beat Info
+                                  {sortBy === 'name' && (
+                                    sortOrder === 'asc' ? 
+                                      <ChevronUp className="h-4 w-4" /> : 
+                                      <ChevronDown className="h-4 w-4" />
+                                  )}
+                                </button>
+                              </th>
+                              <th className="text-left py-3 px-2 font-medium text-gray-700">Location</th>
+                              <th className="text-left py-3 px-2 font-medium text-gray-700">
+                                <button 
+                                  className="flex items-center gap-1 hover:text-gray-900 transition-colors"
+                                  onClick={() => {
+                                    if (sortBy === 'status') {
+                                      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+                                    } else {
+                                      setSortBy('status')
+                                      setSortOrder('asc')
+                                    }
+                                  }}
+                                >
+                                  Beat Status
+                                  {sortBy === 'status' && (
+                                    sortOrder === 'asc' ? 
+                                      <ChevronUp className="h-4 w-4" /> : 
+                                      <ChevronDown className="h-4 w-4" />
+                                  )}
+                                </button>
+                              </th>
+                              <th className="text-left py-3 px-2 font-medium text-gray-700">Personnel</th>
+                              <th className="text-left py-3 px-2 font-medium text-gray-700">Duty Schedule</th>
+                              <th className="text-center py-3 px-2 font-medium text-gray-700">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredBeats.map(beat => (
+                              <BeatTableRow 
+                                key={beat.id} 
+                                beat={beat} 
+                                onEdit={() => setSelectedBeat(beat)}
+                                onView={() => setSelectedBeat(beat)}
+                                onRefresh={handleRefresh}
+                              />
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Pagination */}
+                      {totalPages > 1 && (
+                        <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-200">
+                          <div className="flex items-center space-x-4">
+                            <div className="text-sm text-gray-600">
+                              Page {currentPage} of {totalPages}
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, totalBeats)} of {totalBeats} beats
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePageChange(1)}
+                              disabled={currentPage === 1}
+                            >
+                              First
+                            </Button>
+                            
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePageChange(currentPage - 1)}
+                              disabled={currentPage === 1}
+                            >
+                              Previous
+                            </Button>
+                            
+                            <div className="flex items-center space-x-1">
+                              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                let pageNumber;
+                                
+                                if (totalPages <= 5) {
+                                  pageNumber = i + 1;
+                                } else if (currentPage <= 3) {
+                                  pageNumber = i + 1;
+                                } else if (currentPage >= totalPages - 2) {
+                                  pageNumber = totalPages - 4 + i;
+                                } else {
+                                  pageNumber = currentPage - 2 + i;
+                                }
+                                
+                                return (
+                                  <Button
+                                    key={pageNumber}
+                                    variant={currentPage === pageNumber ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => handlePageChange(pageNumber)}
+                                    className="w-8 h-8 p-0"
+                                  >
+                                    {pageNumber}
+                                  </Button>
+                                );
+                              })}
+                            </div>
+                            
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePageChange(currentPage + 1)}
+                              disabled={currentPage === totalPages}
+                            >
+                              Next
+                            </Button>
+                            
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePageChange(totalPages)}
+                              disabled={currentPage === totalPages}
+                            >
+                              Last
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </>
+      )}
 
       {/* Beat Details Dialog */}
       {selectedBeat && (
         <BeatDetailsDialog 
-          beat={selectedBeat} 
-          onClose={() => setSelectedBeat(null)} 
+          beat={selectedBeat!} 
+          onClose={() => setSelectedBeat(null)}
+          onRefresh={handleRefresh}
         />
       )}
     </div>
@@ -613,11 +856,13 @@ export function GeofencingContent() {
 function BeatTableRow({ 
   beat, 
   onEdit, 
-  onView 
+  onView,
+  onRefresh 
 }: { 
   beat: GeofenceBeat
   onEdit: () => void
-  onView: () => void 
+  onView: () => void
+  onRefresh?: () => void
 }) {
   
   return (
@@ -716,10 +961,32 @@ function BeatTableRow({
             variant="ghost" 
             size="sm" 
             className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
-            onClick={() => {
+            onClick={async () => {
               if (window.confirm('Are you sure you want to delete this beat?')) {
-                // Handle delete logic here
-                console.log('Deleting beat:', beat.id)
+                try {
+                  const session = await useAuthStore.getState().getValidSession()
+                  if (!session) {
+                    toast.error('Authentication required')
+                    return
+                  }
+
+                  const response = await fetch(`/api/beats/${beat.id}`, {
+                    method: 'DELETE',
+                    headers: {
+                      'Authorization': `Bearer ${session.access_token}`
+                    }
+                  })
+
+                  if (!response.ok) {
+                    throw new Error('Failed to delete beat')
+                  }
+
+                  toast.success('Beat deleted successfully')
+                  onRefresh?.()
+                } catch (error) {
+                  console.error('Error deleting beat:', error)
+                  toast.error('Failed to delete beat')
+                }
               }
             }}
           >
@@ -1114,10 +1381,12 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
 // Beat Details Dialog Component
 function BeatDetailsDialog({ 
   beat, 
-  onClose 
+  onClose,
+  onRefresh 
 }: { 
   beat: GeofenceBeat
-  onClose: () => void 
+  onClose: () => void
+  onRefresh?: () => void
 }) {
   return (
     <Dialog open={true} onOpenChange={onClose}>
