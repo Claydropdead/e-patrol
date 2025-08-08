@@ -326,12 +326,12 @@ export function GeofencingContent() {
             .filter(Boolean)
           
           const pendingPersonnel = beatPersonnelData
-            .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id && bp.status === 'pending')
+            .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id && bp.acceptance_status === 'pending')
             .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>)?.full_name as string)
             .filter(Boolean)
           
           const acceptedPersonnel = beatPersonnelData
-            .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id && bp.status === 'accepted')
+            .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id && bp.acceptance_status === 'accepted')
             .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>)?.full_name as string)
             .filter(Boolean)
           
@@ -361,7 +361,7 @@ export function GeofencingContent() {
                 name: (bp.personnel as Record<string, unknown>)?.full_name as string,
                 rank: (bp.personnel as Record<string, unknown>)?.rank as string,
                 email: (bp.personnel as Record<string, unknown>)?.email as string,
-                status: bp.status as string,
+                status: bp.acceptance_status as string,
                 assignedAt: bp.assigned_at as string,
                 acceptedAt: bp.accepted_at as string
               }))
@@ -1123,11 +1123,41 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
         throw new Error('Failed to create beat')
       }
 
+      const createdBeat = await beatResponse.json()
+
       // If personnel selected, assign them to the beat
       if (formData.selectedPersonnel.length > 0) {
-        // Note: This would require personnel IDs, not names
-        // For now, we'll skip personnel assignment during creation
-        console.log('Personnel assignment would happen here:', formData.selectedPersonnel)
+        const session = await useAuthStore.getState().getValidSession()
+        if (!session) {
+          throw new Error('Authentication required for personnel assignment')
+        }
+
+        // Assign each selected personnel to the beat
+        const assignmentPromises = formData.selectedPersonnel.map(async (personnelId) => {
+          const assignmentResponse = await fetch('/api/beat-personnel', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({
+              beat_id: createdBeat.id,
+              personnel_id: personnelId,
+              acceptance_status: 'pending',
+              assigned_at: new Date().toISOString()
+            })
+          })
+
+          if (!assignmentResponse.ok) {
+            console.error(`Failed to assign personnel ${personnelId} to beat`)
+          }
+          
+          return assignmentResponse
+        })
+
+        // Wait for all assignments to complete
+        await Promise.all(assignmentPromises)
+        console.log(`Assigned ${formData.selectedPersonnel.length} personnel to beat ${createdBeat.id}`)
       }
 
       // Refresh parent data and close dialog
@@ -1146,11 +1176,20 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
   React.useEffect(() => {
     const fetchPersonnel = async () => {
       try {
-        const response = await fetch('/api/users')
+        const session = await useAuthStore.getState().getValidSession()
+        if (!session) {
+          console.error('No valid session for fetching personnel')
+          return
+        }
+
+        const response = await fetch('/api/personnel/list', {
+          headers: { 
+            'Authorization': `Bearer ${session.access_token}` 
+          }
+        })
         if (response.ok) {
           const data = await response.json()
           const personnel = data.data
-            .filter((user: Record<string, unknown>) => user.role === 'personnel')
             .map((user: Record<string, unknown>) => ({
               id: user.id as string,
               name: user.full_name as string,
@@ -1159,6 +1198,8 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
               subUnit: user.sub_unit as string
             }))
           setPersonnelData(personnel)
+        } else {
+          console.error('Failed to fetch personnel:', response.status, response.statusText)
         }
       } catch (error) {
         console.error('Failed to fetch personnel:', error)
@@ -1677,11 +1718,20 @@ function EditBeatDialog({
   React.useEffect(() => {
     const fetchPersonnel = async () => {
       try {
-        const response = await fetch('/api/users')
+        const session = await useAuthStore.getState().getValidSession()
+        if (!session) {
+          console.error('No valid session for fetching personnel')
+          return
+        }
+
+        const response = await fetch('/api/personnel/list', {
+          headers: { 
+            'Authorization': `Bearer ${session.access_token}` 
+          }
+        })
         if (response.ok) {
           const data = await response.json()
           const personnel = data.data
-            .filter((user: Record<string, unknown>) => user.role === 'personnel')
             .map((user: Record<string, unknown>) => ({
               id: user.id as string,
               name: user.full_name as string,
@@ -1690,6 +1740,8 @@ function EditBeatDialog({
               subUnit: user.sub_unit as string
             }))
           setPersonnelData(personnel)
+        } else {
+          console.error('Failed to fetch personnel:', response.status, response.statusText)
         }
       } catch (error) {
         console.error('Failed to fetch personnel:', error)

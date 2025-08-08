@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       .insert([{
         beat_id: body.beat_id,
         personnel_id: body.personnel_id,
-        status: body.status || 'pending',
+        acceptance_status: body.acceptance_status || 'pending',
         assigned_at: body.assigned_at || new Date().toISOString()
       }])
       .select()
