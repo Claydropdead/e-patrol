@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -83,13 +83,16 @@ export function ManageUsers() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   
-  // Direct state management instead of useApiData
+  // Direct state management with pagination
   const [usersData, setUsersData] = useState<{ adminUsers: AdminUser[]; personnelUsers: PersonnelUser[] } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalUsers, setTotalUsers] = useState({ admin: 0, personnel: 0 })
+  const ITEMS_PER_PAGE = 50 // Limit items per page
 
-  // Fetch users function
-  const fetchUsers = useCallback(async () => {
+  // Fetch users function with server-side filtering and pagination
+  const fetchUsers = useCallback(async (page = 1, search = '', status = 'all') => {
     setLoading(true)
     setError(null)
     
@@ -99,7 +102,16 @@ export function ManageUsers() {
         throw new Error('Authentication required')
       }
 
-      const response = await fetch('/api/users?type=all', {
+      // Build query parameters for server-side filtering
+      const params = new URLSearchParams({
+        type: 'all',
+        page: page.toString(),
+        limit: ITEMS_PER_PAGE.toString(),
+        ...(search && { search }),
+        ...(status !== 'all' && { status })
+      })
+
+      const response = await fetch(`/api/users?${params}`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Cache-Control': 'no-cache'
@@ -116,6 +128,11 @@ export function ManageUsers() {
       }
 
       setUsersData(result)
+      // Update totals for pagination
+      setTotalUsers({
+        admin: result.totalAdminUsers || 0,
+        personnel: result.totalPersonnelUsers || 0
+      })
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch users'
       setError(errorMessage)
@@ -123,48 +140,43 @@ export function ManageUsers() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [ITEMS_PER_PAGE])
 
   // Initial fetch
   useEffect(() => {
-    fetchUsers()
-  }, [fetchUsers])
+    fetchUsers(1, searchTerm, filterStatus)
+  }, [fetchUsers, searchTerm, filterStatus])
+
+  // Debounced search to avoid too many API calls
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setCurrentPage(1) // Reset to first page on new search
+      fetchUsers(1, searchTerm, filterStatus)
+    }, 300) // 300ms debounce
+
+    return () => clearTimeout(timer)
+  }, [searchTerm, filterStatus, fetchUsers])
 
   // Manual refresh function
   const refresh = useCallback(() => {
-    fetchUsers()
-  }, [fetchUsers])
+    fetchUsers(currentPage, searchTerm, filterStatus)
+  }, [fetchUsers, currentPage, searchTerm, filterStatus])
 
-  // Extract and filter users from API response locally
-  const allAdminUsers = usersData?.adminUsers || []
-  const allPersonnelUsers = usersData?.personnelUsers || []
-  
-  // Filter users locally instead of via API
-  const adminUsers = allAdminUsers.filter((user: AdminUser) => {
-    const matchesSearch = !searchTerm || 
-      user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.rank.toLowerCase().includes(searchTerm.toLowerCase())
-    
-    const matchesStatus = filterStatus === 'all' || 
-      (filterStatus === 'active' && user.is_active) ||
-      (filterStatus === 'inactive' && !user.is_active)
-    
-    return matchesSearch && matchesStatus
-  })
-  
-  const personnelUsers = allPersonnelUsers.filter((user: PersonnelUser) => {
-    const matchesSearch = !searchTerm || 
-      user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.rank.toLowerCase().includes(searchTerm.toLowerCase())
-    
-    const matchesStatus = filterStatus === 'all' || 
-      (filterStatus === 'active' && user.is_active) ||
-      (filterStatus === 'inactive' && !user.is_active)
-    
-    return matchesSearch && matchesStatus
-  })
+  // Handle page changes
+  const handlePageChange = useCallback((newPage: number) => {
+    setCurrentPage(newPage)
+    fetchUsers(newPage, searchTerm, filterStatus)
+  }, [fetchUsers, searchTerm, filterStatus])
+
+  // Memoized user lists (already filtered by server)
+  const adminUsers = useMemo(() => usersData?.adminUsers || [], [usersData?.adminUsers])
+  const personnelUsers = useMemo(() => usersData?.personnelUsers || [], [usersData?.personnelUsers])
+
+  // Calculate pagination info
+  const totalPages = useMemo(() => {
+    const total = activeTab === 'admin' ? totalUsers.admin : totalUsers.personnel
+    return Math.ceil(total / ITEMS_PER_PAGE)
+  }, [activeTab, totalUsers, ITEMS_PER_PAGE])
   
   // Auto refresh state
   const [autoRefresh, setAutoRefresh] = useState(false)
@@ -911,7 +923,10 @@ export function ManageUsers() {
       </Card>
 
       {/* User Lists */}
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as UserType)}>
+      <Tabs value={activeTab} onValueChange={(value) => {
+        setActiveTab(value as UserType)
+        setCurrentPage(1) // Reset to first page when switching tabs
+      }}>
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="admin" className="flex items-center space-x-2">
             <Shield className="h-4 w-4" />
@@ -927,10 +942,102 @@ export function ManageUsers() {
           <AdminUsersTable users={filteredAdminUsers} loading={loading} onToggleStatus={handleToggleUserStatus} onDelete={handleDeleteUser} />
         </TabsContent>
 
+        <TabsContent value="admin" className="mt-6">
+          <AdminUsersTable users={filteredAdminUsers} loading={loading} onToggleStatus={handleToggleUserStatus} onDelete={handleDeleteUser} />
+        </TabsContent>
+
         <TabsContent value="personnel" className="mt-6">
           <PersonnelUsersTable users={filteredPersonnelUsers} loading={loading} onToggleStatus={handleToggleUserStatus} onDelete={handleDeleteUser} />
         </TabsContent>
       </Tabs>
+
+      {/* Pagination Controls */}
+      {!loading && (totalUsers.admin > 0 || totalUsers.personnel > 0) && (
+        <Card className="mt-4">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="text-sm text-gray-600">
+                  Page {currentPage} of {totalPages}
+                </div>
+                <div className="text-sm text-gray-600">
+                  Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, activeTab === 'admin' ? totalUsers.admin : totalUsers.personnel)} of {activeTab === 'admin' ? totalUsers.admin : totalUsers.personnel} {activeTab === 'admin' ? 'admin users' : 'personnel'}
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  className="flex items-center space-x-1"
+                >
+                  <span>First</span>
+                </Button>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="flex items-center space-x-1"
+                >
+                  <span>Previous</span>
+                </Button>
+                
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNumber;
+                    
+                    if (totalPages <= 5) {
+                      pageNumber = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNumber = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNumber = totalPages - 4 + i;
+                    } else {
+                      pageNumber = currentPage - 2 + i;
+                    }
+                    
+                    return (
+                      <Button
+                        key={pageNumber}
+                        variant={currentPage === pageNumber ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPage(pageNumber)}
+                        className="w-8 h-8 p-0"
+                      >
+                        {pageNumber}
+                      </Button>
+                    );
+                  })}
+                </div>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                  className="flex items-center space-x-1"
+                >
+                  <span>Next</span>
+                </Button>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className="flex items-center space-x-1"
+                >
+                  <span>Last</span>
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Edit User Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>

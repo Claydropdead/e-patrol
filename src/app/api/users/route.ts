@@ -89,24 +89,58 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get query parameters
+    // Get query parameters with pagination support
     const searchParams = request.nextUrl.searchParams
     const userType = searchParams.get('type') || 'all' // 'admin', 'personnel', or 'all'
     const search = searchParams.get('search') || ''
     const role = searchParams.get('role') || 'all'
     const status = searchParams.get('status') || 'all'
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '50')
+
+    // Calculate offset for pagination
+    const offset = (page - 1) * limit
 
     const responses: {
       adminUsers?: AdminAccount[]
       personnelUsers?: Personnel[]
+      totalAdminUsers?: number
+      totalPersonnelUsers?: number
+      pagination?: {
+        page: number
+        limit: number
+        total: number
+        totalPages: number
+      }
     } = {}
 
     // Fetch admin users if requested
     if (userType === 'admin' || userType === 'all') {
+      // First get the total count for pagination
+      let countQuery = supabaseAdmin
+        .from('admin_accounts')
+        .select('*', { count: 'exact', head: true })
+
+      // Apply same filters for count
+      if (search) {
+        countQuery = countQuery.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,rank.ilike.%${search}%`)
+      }
+      if (role !== 'all') {
+        countQuery = countQuery.eq('role', role)
+      }
+      if (status !== 'all') {
+        const isActive = status === 'active'
+        countQuery = countQuery.eq('is_active', isActive)
+      }
+
+      const { count: totalAdminCount } = await countQuery
+
+      // Then get the paginated data
       let adminQuery = supabaseAdmin
         .from('admin_accounts')
         .select('*')
         .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1)
 
       // Apply search filter
       if (search) {
@@ -135,14 +169,33 @@ export async function GET(request: NextRequest) {
       }
 
       responses.adminUsers = adminUsers
+      responses.totalAdminUsers = totalAdminCount || 0
     }
 
     // Fetch personnel if requested
     if (userType === 'personnel' || userType === 'all') {
+      // First get the total count for pagination
+      let countQuery = supabaseAdmin
+        .from('personnel')
+        .select('*', { count: 'exact', head: true })
+
+      // Apply same filters for count
+      if (search) {
+        countQuery = countQuery.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,rank.ilike.%${search}%,contact_number.ilike.%${search}%,province.ilike.%${search}%,sub_unit.ilike.%${search}%`)
+      }
+      if (status !== 'all') {
+        const isActive = status === 'active'
+        countQuery = countQuery.eq('is_active', isActive)
+      }
+
+      const { count: totalPersonnelCount } = await countQuery
+
+      // Then get the paginated data
       let personnelQuery = supabaseAdmin
         .from('personnel')
         .select('*')
         .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1)
 
       // Apply search filter
       if (search) {
@@ -166,6 +219,7 @@ export async function GET(request: NextRequest) {
       }
 
       responses.personnelUsers = personnelUsers
+      responses.totalPersonnelUsers = totalPersonnelCount || 0
     }
 
     return NextResponse.json(responses)

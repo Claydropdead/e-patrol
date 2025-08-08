@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -53,7 +53,7 @@ export function AuditLogsViewer() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Fetch audit logs function
+  // Fetch audit logs function with server-side filtering and pagination
   const fetchAuditLogs = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -64,7 +64,16 @@ export function AuditLogsViewer() {
         throw new Error('Authentication required')
       }
 
-      const response = await fetch('/api/audit?page=1&limit=100', {
+      // Build query parameters for server-side filtering
+      const params = new URLSearchParams({
+        page: filters.page.toString(),
+        limit: '25', // Reasonable page size
+        ...(filters.table !== 'all' && { table: filters.table }),
+        ...(filters.operation !== 'all' && { operation: filters.operation }),
+        ...(filters.userId && { userId: filters.userId })
+      })
+
+      const response = await fetch(`/api/audit?${params}`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Cache-Control': 'no-cache'
@@ -88,11 +97,15 @@ export function AuditLogsViewer() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [filters])
 
-  // Initial fetch
+  // Initial fetch with debounced filter changes
   useEffect(() => {
-    fetchAuditLogs()
+    const timer = setTimeout(() => {
+      fetchAuditLogs()
+    }, 300) // 300ms debounce for filter changes
+
+    return () => clearTimeout(timer)
   }, [fetchAuditLogs])
 
   // Manual refresh function
@@ -100,11 +113,27 @@ export function AuditLogsViewer() {
     fetchAuditLogs()
   }, [fetchAuditLogs])
 
+  // Memoized audit logs (already filtered by server)
+  const auditLogs = useMemo(() => auditResponse?.data || [], [auditResponse?.data])
+  
+  // Server-side filtering means we don't need client-side filtering anymore
+  const paginatedLogs = auditLogs // Already paginated by server
+  
+  // Get pagination from server response
+  const pagination = useMemo(() => 
+    auditResponse?.pagination || {
+      page: 1,
+      limit: 25,
+      total: 0,
+      totalPages: 1
+    }, [auditResponse?.pagination]
+  )
+
   // Separate hook for stats
   const [stats, setStats] = useState<StatsResponse | null>(null)
 
   // Fetch stats function
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const session = await useAuthStore.getState().getValidSession()
       if (!session) return
@@ -125,44 +154,7 @@ export function AuditLogsViewer() {
     } catch (error) {
       console.warn('Failed to fetch stats:', error)
     }
-  }
-
-  const auditLogs = auditResponse?.data || []
-  
-  // Client-side filtering
-  const filteredLogs = auditLogs.filter((log: AuditEntry) => {
-    // Filter by table
-    if (filters.table !== 'all' && log.table_name !== filters.table) {
-      return false
-    }
-    
-    // Filter by operation
-    if (filters.operation !== 'all' && log.operation !== filters.operation) {
-      return false
-    }
-    
-    // Filter by user ID
-    if (filters.userId && !log.changed_by?.includes(filters.userId) && !log.changed_by_name?.toLowerCase().includes(filters.userId.toLowerCase())) {
-      return false
-    }
-    
-    return true
-  })
-  
-  // Client-side pagination
-  const itemsPerPage = 25
-  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage)
-  const startIndex = (filters.page - 1) * itemsPerPage
-  const endIndex = startIndex + itemsPerPage
-  const paginatedLogs = filteredLogs.slice(startIndex, endIndex)
-  
-  // Create pagination object
-  const pagination = {
-    page: filters.page,
-    limit: itemsPerPage,
-    total: filteredLogs.length,
-    totalPages: totalPages
-  }
+  }, [])
 
   // Helper function to get user-friendly table names
   const getTableDisplayName = (tableName: string): string => {
@@ -689,33 +681,85 @@ export function AuditLogsViewer() {
 
       {/* Pagination */}
       {pagination && pagination.totalPages > 1 && (
-        <div className="flex items-center justify-between bg-white px-4 py-3 border rounded-lg">
-          <Button
-            onClick={() => handleFilterChange('page', (filters.page - 1).toString())}
-            disabled={filters.page <= 1}
-            variant="outline"
-            size="sm"
-          >
-            Previous
-          </Button>
-          
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-600">
+        <div className="flex items-center justify-between bg-white px-6 py-4 border rounded-lg">
+          <div className="flex items-center space-x-4">
+            <div className="text-sm text-gray-600">
               Page {filters.page} of {pagination.totalPages}
-            </span>
-            <span className="text-xs text-gray-400">
-              ({paginatedLogs.length} entries / {filteredLogs.length} total)
-            </span>
+            </div>
+            <div className="text-sm text-gray-600">
+              Showing {((filters.page - 1) * pagination.limit) + 1} to {Math.min(filters.page * pagination.limit, pagination.total)} of {pagination.total} audit entries
+            </div>
           </div>
           
-          <Button
-            onClick={() => handleFilterChange('page', (filters.page + 1).toString())}
-            disabled={filters.page >= pagination.totalPages}
-            variant="outline"
-            size="sm"
-          >
-            Next
-          </Button>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleFilterChange('page', '1')}
+              disabled={filters.page === 1}
+              className="flex items-center space-x-1"
+            >
+              <span>First</span>
+            </Button>
+            
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleFilterChange('page', (filters.page - 1).toString())}
+              disabled={filters.page <= 1}
+              className="flex items-center space-x-1"
+            >
+              <span>Previous</span>
+            </Button>
+            
+            <div className="flex items-center space-x-1">
+              {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                let pageNumber;
+                
+                if (pagination.totalPages <= 5) {
+                  pageNumber = i + 1;
+                } else if (filters.page <= 3) {
+                  pageNumber = i + 1;
+                } else if (filters.page >= pagination.totalPages - 2) {
+                  pageNumber = pagination.totalPages - 4 + i;
+                } else {
+                  pageNumber = filters.page - 2 + i;
+                }
+                
+                return (
+                  <Button
+                    key={pageNumber}
+                    variant={filters.page === pageNumber ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handleFilterChange('page', pageNumber.toString())}
+                    className="w-8 h-8 p-0"
+                  >
+                    {pageNumber}
+                  </Button>
+                );
+              })}
+            </div>
+            
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleFilterChange('page', (filters.page + 1).toString())}
+              disabled={filters.page >= pagination.totalPages}
+              className="flex items-center space-x-1"
+            >
+              <span>Next</span>
+            </Button>
+            
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleFilterChange('page', pagination.totalPages.toString())}
+              disabled={filters.page === pagination.totalPages}
+              className="flex items-center space-x-1"
+            >
+              <span>Last</span>
+            </Button>
+          </div>
         </div>
       )}
     </div>
