@@ -113,28 +113,56 @@ const formatDutyTime = (startTime?: string, endTime?: string) => {
     return '24-Hour Duty'
   }
   
-  // Handle simple time format (HH:MM)
+  // Enhanced time formatting function
   const formatTime = (timeStr: string) => {
-    if (timeStr.includes(':') && !timeStr.includes(' ')) {
-      // Simple format like "06:00"
-      const [hours, minutes] = timeStr.split(':')
-      const hour = parseInt(hours)
+    // Handle simple time format (HH:MM or H:MM)
+    if (timeStr.includes(':') && !timeStr.includes(' ') && !timeStr.includes('T')) {
+      const [hoursStr, minutesStr] = timeStr.split(':')
+      const hour = parseInt(hoursStr, 10)
+      const minutes = minutesStr.padStart(2, '0')
+      
+      // Validate hour and minutes
+      if (isNaN(hour) || hour < 0 || hour > 23) {
+        return timeStr // Return original if invalid
+      }
+      
       const ampm = hour >= 12 ? 'PM' : 'AM'
       const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
       return `${displayHour}:${minutes} ${ampm}`
     }
     
-    // Handle full datetime format
+    // Handle full datetime format (ISO strings)
+    if (timeStr.includes('T') || timeStr.includes('-')) {
+      try {
+        const date = new Date(timeStr)
+        if (isNaN(date.getTime())) {
+          return timeStr // Return original if invalid date
+        }
+        return date.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        })
+      } catch {
+        return timeStr
+      }
+    }
+    
+    // Handle timestamps or other formats
     try {
       const date = new Date(timeStr)
-      return date.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true 
-      })
+      if (!isNaN(date.getTime())) {
+        return date.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        })
+      }
     } catch {
-      return timeStr
+      // Fall through to return original
     }
+    
+    return timeStr // Return original string if no format matches
   }
   
   const startFormatted = formatTime(startTime)
@@ -150,41 +178,67 @@ const formatDutyTime = (startTime?: string, endTime?: string) => {
 const calculateDutyDuration = (startTime?: string, endTime?: string) => {
   if (!startTime || !endTime) return 'N/A'
   
-  // Handle simple time format (HH:MM)
-  if (startTime.includes(':') && !startTime.includes(' ')) {
-    const [startHour, startMin] = startTime.split(':').map(Number)
-    const [endHour, endMin] = endTime.split(':').map(Number)
-    
-    const startMinutes = startHour * 60 + startMin
-    let endMinutes = endHour * 60 + endMin
-    
-    // Special case for 24-hour duty (00:00 to 23:59)
-    if (startTime === '00:00' && endTime === '23:59') {
-      return '24h 0m'
-    }
-    
-    // Handle overnight shifts
-    if (endMinutes <= startMinutes) {
-      endMinutes += 24 * 60
-    }
-    
-    const diffMinutes = endMinutes - startMinutes
-    const hours = Math.floor(diffMinutes / 60)
-    const minutes = diffMinutes % 60
-    
-    return `${hours}h ${minutes}m`
+  // Special case for 24-hour duty (00:00 to 23:59)
+  if (startTime === '00:00' && endTime === '23:59') {
+    return '24 hours'
   }
   
-  // Handle full datetime format (fallback)
-  try {
-    const start = new Date(startTime)
-    const end = new Date(endTime)
-    const diffMs = end.getTime() - start.getTime()
-    const hours = Math.floor(diffMs / (1000 * 60 * 60))
-    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
-    return `${hours}h ${minutes}m`
-  } catch {
+  // Enhanced time parsing function
+  const parseTime = (timeStr: string): { hours: number; minutes: number } | null => {
+    // Handle simple time format (HH:MM or H:MM)
+    if (timeStr.includes(':') && !timeStr.includes(' ') && !timeStr.includes('T')) {
+      const [hoursStr, minutesStr] = timeStr.split(':')
+      const hours = parseInt(hoursStr, 10)
+      const minutes = parseInt(minutesStr, 10)
+      
+      if (isNaN(hours) || isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+        return null
+      }
+      
+      return { hours, minutes }
+    }
+    
+    // Handle datetime formats
+    try {
+      const date = new Date(timeStr)
+      if (isNaN(date.getTime())) {
+        return null
+      }
+      return { 
+        hours: date.getHours(), 
+        minutes: date.getMinutes() 
+      }
+    } catch {
+      return null
+    }
+  }
+  
+  const startParsed = parseTime(startTime)
+  const endParsed = parseTime(endTime)
+  
+  if (!startParsed || !endParsed) {
     return 'N/A'
+  }
+  
+  const startMinutes = startParsed.hours * 60 + startParsed.minutes
+  let endMinutes = endParsed.hours * 60 + endParsed.minutes
+  
+  // Handle overnight shifts (end time is next day)
+  if (endMinutes <= startMinutes) {
+    endMinutes += 24 * 60 // Add 24 hours
+  }
+  
+  const diffMinutes = endMinutes - startMinutes
+  const hours = Math.floor(diffMinutes / 60)
+  const minutes = diffMinutes % 60
+  
+  // Format duration nicely
+  if (hours === 0) {
+    return `${minutes} min${minutes !== 1 ? 's' : ''}`
+  } else if (minutes === 0) {
+    return `${hours} hour${hours !== 1 ? 's' : ''}`
+  } else {
+    return `${hours}h ${minutes}m`
   }
 }
 
@@ -214,6 +268,8 @@ export function GeofencingContent() {
   // Dialog states
   const [isCreateBeatOpen, setIsCreateBeatOpen] = useState(false)
   const [selectedBeat, setSelectedBeat] = useState<GeofenceBeat | null>(null)
+  const [isEditBeatOpen, setIsEditBeatOpen] = useState(false)
+  const [beatToEdit, setBeatToEdit] = useState<GeofenceBeat | null>(null)
   
   // Last refresh tracking for manual refresh only
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
@@ -353,6 +409,37 @@ export function GeofencingContent() {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
     await fetchData(currentPage, false)
+  }, [fetchData, currentPage])
+
+  // Delete beat handler
+  const handleDeleteBeat = useCallback(async (beatId: string, beatName: string) => {
+    if (!window.confirm(`Are you sure you want to delete "${beatName}"? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const session = await useAuthStore.getState().getValidSession()
+      if (!session) {
+        throw new Error('Authentication required')
+      }
+
+      const response = await fetch(`/api/beats/${beatId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete beat')
+      }
+
+      toast.success('Beat deleted successfully')
+      await fetchData(currentPage, false) // Refresh the data
+    } catch (error) {
+      console.error('Delete beat error:', error)
+      toast.error('Failed to delete beat')
+    }
   }, [fetchData, currentPage])
 
   // Initial data load
@@ -740,11 +827,15 @@ export function GeofencingContent() {
                           </thead>
                           <tbody>
                             {filteredBeats.map(beat => (
-                              <BeatTableRow 
-                                key={beat.id} 
-                                beat={beat} 
-                                onEdit={() => setSelectedBeat(beat)}
+                              <BeatTableRow
+                                key={beat.id}
+                                beat={beat}
+                                onEdit={() => {
+                                  setBeatToEdit(beat)
+                                  setIsEditBeatOpen(true)
+                                }}
                                 onView={() => setSelectedBeat(beat)}
+                                onDelete={handleDeleteBeat}
                                 onRefresh={handleRefresh}
                               />
                             ))}
@@ -840,6 +931,18 @@ export function GeofencingContent() {
         </>
       )}
 
+      {/* Edit Beat Dialog */}
+      {isEditBeatOpen && beatToEdit && (
+        <EditBeatDialog 
+          beat={beatToEdit}
+          onClose={() => {
+            setIsEditBeatOpen(false)
+            setBeatToEdit(null)
+          }}
+          onBeatUpdated={handleRefresh}
+        />
+      )}
+
       {/* Beat Details Dialog */}
       {selectedBeat && (
         <BeatDetailsDialog 
@@ -857,11 +960,13 @@ function BeatTableRow({
   beat, 
   onEdit, 
   onView,
+  onDelete,
   onRefresh 
 }: { 
   beat: GeofenceBeat
   onEdit: () => void
   onView: () => void
+  onDelete: (beatId: string, beatName: string) => void
   onRefresh?: () => void
 }) {
   
@@ -961,34 +1066,7 @@ function BeatTableRow({
             variant="ghost" 
             size="sm" 
             className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
-            onClick={async () => {
-              if (window.confirm('Are you sure you want to delete this beat?')) {
-                try {
-                  const session = await useAuthStore.getState().getValidSession()
-                  if (!session) {
-                    toast.error('Authentication required')
-                    return
-                  }
-
-                  const response = await fetch(`/api/beats/${beat.id}`, {
-                    method: 'DELETE',
-                    headers: {
-                      'Authorization': `Bearer ${session.access_token}`
-                    }
-                  })
-
-                  if (!response.ok) {
-                    throw new Error('Failed to delete beat')
-                  }
-
-                  toast.success('Beat deleted successfully')
-                  onRefresh?.()
-                } catch (error) {
-                  console.error('Error deleting beat:', error)
-                  toast.error('Failed to delete beat')
-                }
-              }
-            }}
+            onClick={() => onDelete(beat.id, beat.name)}
           >
             <Trash2 className="h-4 w-4" />
           </Button>
@@ -1119,28 +1197,6 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
       subUnit: value,
       selectedPersonnel: [] // Clear selected personnel when subunit changes
     })
-  }
-
-  // Calculate duty duration
-  const calculateDutyDuration = (startTime: string, endTime: string) => {
-    if (!startTime || !endTime) return ''
-    
-    const [startHour, startMin] = startTime.split(':').map(Number)
-    const [endHour, endMin] = endTime.split(':').map(Number)
-    
-    const startMinutes = startHour * 60 + startMin
-    let endMinutes = endHour * 60 + endMin
-    
-    // Handle overnight shifts
-    if (endMinutes <= startMinutes) {
-      endMinutes += 24 * 60
-    }
-    
-    const diffMinutes = endMinutes - startMinutes
-    const hours = Math.floor(diffMinutes / 60)
-    const minutes = diffMinutes % 60
-    
-    return `${hours}h ${minutes}m`
   }
 
   return (
@@ -1388,6 +1444,25 @@ function BeatDetailsDialog({
   onClose: () => void
   onRefresh?: () => void
 }) {
+  const [isEditMode, setIsEditMode] = useState(false)
+
+  if (isEditMode) {
+    return (
+      <EditBeatDialog 
+        beat={beat}
+        onClose={() => {
+          setIsEditMode(false)
+          onClose()
+        }}
+        onBeatUpdated={() => {
+          setIsEditMode(false)
+          onRefresh?.()
+          onClose()
+        }}
+      />
+    )
+  }
+
   return (
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -1513,11 +1588,355 @@ function BeatDetailsDialog({
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>
-          <Button>
+          <Button onClick={() => setIsEditMode(true)}>
             <Edit className="h-4 w-4 mr-2" />
             Edit Beat
           </Button>
         </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Edit Beat Dialog Component
+function EditBeatDialog({ 
+  beat, 
+  onClose, 
+  onBeatUpdated 
+}: { 
+  beat: GeofenceBeat
+  onClose: () => void
+  onBeatUpdated?: () => void
+}) {
+  const [formData, setFormData] = useState({
+    name: beat.name,
+    address: beat.location.address,
+    lat: beat.location.lat.toString(),
+    lng: beat.location.lng.toString(),
+    radius: beat.radius.toString(),
+    unit: beat.unit,
+    subUnit: beat.subUnit,
+    dutyStartTime: beat.dutyStartTime || '',
+    dutyEndTime: beat.dutyEndTime || '',
+    selectedPersonnel: [] as string[]
+  })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Handle form submission
+  const handleSubmit = async () => {
+    if (!formData.name || !formData.unit || !formData.subUnit || !formData.lat || !formData.lng) {
+      setError('Please fill in all required fields')
+      return
+    }
+
+    setIsSubmitting(true)
+    setError(null)
+
+    try {
+      const session = await useAuthStore.getState().getValidSession()
+      if (!session) {
+        throw new Error('Authentication required')
+      }
+
+      // Update the beat
+      const beatResponse = await fetch(`/api/beats/${beat.id}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          center_lat: parseFloat(formData.lat),
+          center_lng: parseFloat(formData.lng),
+          radius: parseInt(formData.radius),
+          unit: formData.unit,
+          sub_unit: formData.subUnit,
+          description: formData.address
+        })
+      })
+
+      if (!beatResponse.ok) {
+        throw new Error('Failed to update beat')
+      }
+
+      toast.success('Beat updated successfully')
+      onBeatUpdated?.()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update beat')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // Fetch personnel data from API for beat assignment
+  const [personnelData, setPersonnelData] = useState<Array<{id: string, name: string, rank: string, unit: string, subUnit: string}>>([])
+  
+  React.useEffect(() => {
+    const fetchPersonnel = async () => {
+      try {
+        const response = await fetch('/api/users')
+        if (response.ok) {
+          const data = await response.json()
+          const personnel = data.data
+            .filter((user: Record<string, unknown>) => user.role === 'personnel')
+            .map((user: Record<string, unknown>) => ({
+              id: user.id as string,
+              name: user.full_name as string,
+              rank: user.rank as string,
+              unit: user.unit as string,
+              subUnit: user.sub_unit as string
+            }))
+          setPersonnelData(personnel)
+        }
+      } catch (error) {
+        console.error('Failed to fetch personnel:', error)
+      }
+    }
+    fetchPersonnel()
+  }, [])
+
+  const units = Object.keys(MIMAROPA_STRUCTURE) // Main units (provinces)
+  
+  // Get available sub-units based on selected unit
+  const availableSubUnits = formData.unit ? MIMAROPA_STRUCTURE[formData.unit as keyof typeof MIMAROPA_STRUCTURE]?.subUnits || [] : []
+
+  // Filter personnel based on selected unit and subunit
+  const filteredPersonnel = personnelData.filter(person => {
+    if (!formData.unit) return false
+    if (person.unit !== formData.unit) return false
+    if (formData.subUnit && person.subUnit !== formData.subUnit) return false
+    return true
+  })
+
+  // Reset subUnit and personnel when unit changes
+  const handleUnitChange = (value: string) => {
+    setFormData({
+      ...formData, 
+      unit: value,
+      subUnit: '',
+      selectedPersonnel: [] // Clear selected personnel when unit changes
+    })
+  }
+
+  // Reset personnel when subunit changes
+  const handleSubUnitChange = (value: string) => {
+    setFormData({
+      ...formData,
+      subUnit: value,
+      selectedPersonnel: [] // Clear selected personnel when subunit changes
+    })
+  }
+
+  return (
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Edit className="h-5 w-5" />
+            Edit Beat: {beat.name}
+          </DialogTitle>
+          <DialogDescription>
+            Update the beat information, location, and settings.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="space-y-6">
+          {/* Basic Information */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-gray-900">Basic Information</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="name">Beat Name</Label>
+                <Input
+                  id="name"
+                  placeholder="e.g., Beat 1, Alpha Beat, City Center Beat"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                />
+              </div>
+              <div>
+                <Label htmlFor="radius">Radius (meters)</Label>
+                <Input
+                  id="radius"
+                  type="number"
+                  placeholder="500"
+                  value={formData.radius}
+                  onChange={(e) => setFormData({...formData, radius: e.target.value})}
+                />
+              </div>
+            </div>
+            
+            <div>
+              <Label htmlFor="address">Location Address</Label>
+              <Input
+                id="address"
+                placeholder="e.g., Calapan City Proper, Oriental Mindoro"
+                value={formData.address}
+                onChange={(e) => setFormData({...formData, address: e.target.value})}
+              />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="lat">Latitude</Label>
+                <Input
+                  id="lat"
+                  placeholder="13.4119"
+                  value={formData.lat}
+                  onChange={(e) => setFormData({...formData, lat: e.target.value})}
+                />
+              </div>
+              <div>
+                <Label htmlFor="lng">Longitude</Label>
+                <Input
+                  id="lng"
+                  placeholder="121.1805"
+                  value={formData.lng}
+                  onChange={(e) => setFormData({...formData, lng: e.target.value})}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Unit Assignment */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-gray-900">Unit Assignment</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="unit">Unit</Label>
+                <Select value={formData.unit} onValueChange={handleUnitChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Unit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {units.map(unit => (
+                      <SelectItem key={unit} value={unit}>
+                        {unit}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="subunit">Sub-unit</Label>
+                <Select 
+                  value={formData.subUnit} 
+                  onValueChange={handleSubUnitChange}
+                  disabled={!formData.unit}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={formData.unit ? "Select Sub-unit" : "Select Unit first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableSubUnits.map(subUnit => (
+                      <SelectItem key={subUnit} value={subUnit}>
+                        {subUnit}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          {/* Duty Schedule */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-gray-900">Duty Schedule</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="dutyStartTime">Start Time</Label>
+                <Input
+                  id="dutyStartTime"
+                  type="time"
+                  value={formData.dutyStartTime}
+                  onChange={(e) => setFormData({...formData, dutyStartTime: e.target.value})}
+                />
+              </div>
+              <div>
+                <Label htmlFor="dutyEndTime">End Time</Label>
+                <Input
+                  id="dutyEndTime"
+                  type="time"
+                  value={formData.dutyEndTime}
+                  onChange={(e) => setFormData({...formData, dutyEndTime: e.target.value})}
+                />
+              </div>
+            </div>
+            {formData.dutyStartTime && formData.dutyEndTime && (
+              <div className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-blue-600" />
+                  <span className="font-medium text-blue-800">
+                    Duration: {calculateDutyDuration(formData.dutyStartTime, formData.dutyEndTime)}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Current Personnel */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-gray-900">Current Personnel Assignment</h3>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="space-y-2">
+                {beat.assignedPersonnel.length > 0 ? (
+                  beat.assignedPersonnel.map((person, index) => (
+                    <div key={index} className="flex items-center justify-between p-2 bg-white rounded border">
+                      <div>
+                        <span className="font-medium">{person}</span>
+                        <span className="text-sm text-gray-500 ml-2">({beat.unit} - {beat.subUnit})</span>
+                      </div>
+                      {beat.personnelAcceptance?.[person] && (
+                        <Badge className={`text-xs ${
+                          beat.personnelAcceptance[person].status === 'accepted' ? 'bg-green-100 text-green-700' :
+                          beat.personnelAcceptance[person].status === 'declined' ? 'bg-red-100 text-red-700' :
+                          'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {beat.personnelAcceptance[person].status}
+                        </Badge>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-gray-500 py-4">
+                    No personnel currently assigned to this beat
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="text-sm text-gray-600">
+              <p>Note: Personnel assignment changes should be made through the Personnel Management section for proper tracking and notifications.</p>
+            </div>
+          </div>
+        </div>
+        
+        <DialogFooter className="pt-4">
+          {error && (
+            <div className="w-full mb-2 p-2 bg-red-50 border border-red-200 rounded-md text-red-600 text-sm">
+              {error}
+            </div>
+          )}
+          <Button variant="outline" onClick={onClose} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSubmit}
+            disabled={!formData.name || !formData.unit || !formData.subUnit || !formData.lat || !formData.lng || isSubmitting}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            {isSubmitting ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Updating...
+              </>
+            ) : (
+              'Update Beat'
+            )}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
