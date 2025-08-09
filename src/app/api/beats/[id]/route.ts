@@ -291,10 +291,10 @@ export async function DELETE(
 
     const deleteServerSupabase = createServerSupabaseClient()
     
-    // First check if beat exists
+    // First check if beat exists and get complete data for audit log
     const { data: existingBeat, error: fetchError } = await deleteServerSupabase
       .from('beats')
-      .select('id, name')
+      .select('*')
       .eq('id', id)
       .single()
 
@@ -302,10 +302,18 @@ export async function DELETE(
       return NextResponse.json({ error: 'Beat not found' }, { status: 404 })
     }
 
-    // Check if beat has assigned personnel (prevent deletion if active)
+    // Check if beat has assigned personnel and get complete personnel info for audit
     const { data: assignedPersonnel, error: personnelError } = await deleteServerSupabase
       .from('beat_personnel')
-      .select('id, acceptance_status')
+      .select(`
+        *,
+        personnel!inner (
+          id,
+          full_name,
+          rank,
+          email
+        )
+      `)
       .eq('beat_id', id)
 
     if (personnelError) {
@@ -350,13 +358,28 @@ export async function DELETE(
       console.log(`Removed ${assignedPersonnel.length} pending personnel assignments for beat ${id}`)
     }
 
+    // Prepare enhanced beat data with personnel information for audit log
+    const enhancedBeatData = {
+      ...existingBeat,
+      assigned_personnel: assignedPersonnel && assignedPersonnel.length > 0 
+        ? assignedPersonnel.map(assignment => ({
+            personnel_id: assignment.personnel_id,
+            full_name: assignment.personnel?.full_name,
+            rank: assignment.personnel?.rank,
+            email: assignment.personnel?.email,
+            acceptance_status: assignment.acceptance_status,
+            assigned_at: assignment.assigned_at
+          }))
+        : []
+    }
+
     // Audit log for beat deletion (before deleting)
     await deleteServerSupabase
       .from('audit_logs')
       .insert({
         table_name: 'beats',
         operation: 'DELETE',
-        old_data: existingBeat,
+        old_data: enhancedBeatData,
         new_data: null,
         changed_by: user.id,
         changed_at: new Date().toISOString(),

@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
     let query = supabaseAdmin
       .from('audit_logs')
       .select('*', { count: 'exact' })
-      .order('changed_at', { ascending: false })  // Use changed_at instead of created_at
+      .order('changed_at', { ascending: false })
 
     // Apply filters safely
     if (table && table !== 'all') {
@@ -180,8 +180,37 @@ export async function GET(request: NextRequest) {
       changed_by_name: userNameMap[log.changed_by as string] || null
     }))
 
+    // Apply intelligent sorting to prioritize beat operations over personnel assignments
+    // when they occur at similar times (within 1 second of each other)
+    const intelligentlySortedLogs = processedLogs.sort((a, b) => {
+      const timeA = new Date(a.changed_at as string).getTime()
+      const timeB = new Date(b.changed_at as string).getTime()
+      const timeDiff = Math.abs(timeA - timeB)
+      
+      // If entries are within 1 second of each other, prioritize by operation importance
+      if (timeDiff <= 1000) {
+        // Priority order: beats operations > personnel operations > others
+        const getPriority = (tableName: string) => {
+          if (tableName === 'beats') return 1
+          if (tableName === 'personnel') return 2
+          if (tableName === 'beat_personnel') return 3
+          return 4
+        }
+        
+        const priorityA = getPriority(a.table_name as string)
+        const priorityB = getPriority(b.table_name as string)
+        
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB
+        }
+      }
+      
+      // Default sort by time (most recent first)
+      return timeB - timeA
+    })
+
     return NextResponse.json({
-      data: processedLogs,
+      data: intelligentlySortedLogs,
       pagination: {
         page,
         limit,

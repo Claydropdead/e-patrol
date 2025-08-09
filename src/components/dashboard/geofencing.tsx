@@ -1104,10 +1104,21 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
     setError(null)
 
     try {
+      // Get valid session for authentication
+      const session = await useAuthStore.getState().getValidSession()
+      if (!session) {
+        setError('Authentication required. Please log in again.')
+        setIsSubmitting(false)
+        return
+      }
+
       // Create the beat
       const beatResponse = await fetch('/api/beats', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({
           name: formData.name,
           center_lat: parseFloat(formData.lat),
