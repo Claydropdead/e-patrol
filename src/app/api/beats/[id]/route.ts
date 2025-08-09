@@ -11,25 +11,31 @@ async function validateAuthAndGetUser(request: NextRequest) {
   }
 
   const token = authHeader.replace('Bearer ', '')
-  const supabase = createClient(
+  const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    }
   )
 
-  const { data: { user }, error } = await supabase.auth.getUser(token)
+  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
   
   if (error || !user) {
     return { error: 'Invalid or expired token', status: 401 }
   }
 
-  return { user, supabase }
+  return { user, supabase: supabaseAdmin }
 }
 
 // Helper function to validate user permissions
 async function validateUserPermissions(supabase: any, userId: string, requiredRoles: string[] = ['superadmin']) {
   const { data: profile, error } = await supabase
-    .from('user_profiles')
-    .select('role, unit, sub_unit')
+    .from('admin_accounts')
+    .select('role')
     .eq('id', userId)
     .single()
 
@@ -197,6 +203,13 @@ export async function PUT(
     // Always update the updated_at timestamp
     updateData.updated_at = new Date().toISOString()
 
+    // Get original data for audit logging
+    const { data: originalBeat } = await updateServerSupabase
+      .from('beats')
+      .select('*')
+      .eq('id', id)
+      .single()
+
     const { data, error } = await updateServerSupabase
       .from('beats')
       .update(updateData)
@@ -209,8 +222,22 @@ export async function PUT(
       return NextResponse.json({ error: 'Failed to update beat' }, { status: 500 })
     }
 
-    // Log the update for audit purposes
-    console.log(`Beat ${id} updated by user ${user.id} (${user.email})`)
+    // Audit log for beat update
+    await updateServerSupabase
+      .from('audit_logs')
+      .insert({
+        table_name: 'beats',
+        operation: 'UPDATE',
+        old_data: originalBeat,
+        new_data: data,
+        changed_by: user.id,
+        changed_at: new Date().toISOString(),
+        ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        user_agent: request.headers.get('user-agent') || 'unknown'
+      })
+
+    // Log the update for audit purposes (sanitized)
+    console.log(`Beat ${id} updated by user ${user.id}`)
 
     return NextResponse.json(data, {
       headers: getRateLimitHeaders(rateLimitResult)
@@ -278,17 +305,64 @@ export async function DELETE(
     // Check if beat has assigned personnel (prevent deletion if active)
     const { data: assignedPersonnel, error: personnelError } = await deleteServerSupabase
       .from('beat_personnel')
-      .select('id')
+      .select('id, acceptance_status')
       .eq('beat_id', id)
-      .eq('status', 'accepted')
 
     if (personnelError) {
       console.error('Error checking assigned personnel:', personnelError)
     } else if (assignedPersonnel && assignedPersonnel.length > 0) {
-      return NextResponse.json({ 
-        error: 'Cannot delete beat with active personnel assignments. Please reassign personnel first.' 
-      }, { status: 400 })
+      // Check for accepted personnel (these should block deletion)
+      const acceptedPersonnel = assignedPersonnel.filter(p => p.acceptance_status === 'accepted')
+      
+      if (acceptedPersonnel.length > 0) {
+        return NextResponse.json({ 
+          error: 'Cannot delete beat with active personnel assignments. Please reassign personnel first.' 
+        }, { status: 400 })
+      }
+      
+      // Remove pending personnel assignments before deleting beat
+      const { error: removeAssignmentsError } = await deleteServerSupabase
+        .from('beat_personnel')
+        .delete()
+        .eq('beat_id', id)
+        
+      if (removeAssignmentsError) {
+        console.error('Error removing personnel assignments:', removeAssignmentsError)
+        return NextResponse.json({ error: 'Failed to remove personnel assignments' }, { status: 500 })
+      }
+      
+      // Audit log for assignment removals
+      for (const assignment of assignedPersonnel) {
+        await deleteServerSupabase
+          .from('audit_logs')
+          .insert({
+            table_name: 'beat_personnel',
+            operation: 'DELETE',
+            old_data: assignment,
+            new_data: null,
+            changed_by: user.id,
+            changed_at: new Date().toISOString(),
+            ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+            user_agent: request.headers.get('user-agent') || 'unknown'
+          })
+      }
+      
+      console.log(`Removed ${assignedPersonnel.length} pending personnel assignments for beat ${id}`)
     }
+
+    // Audit log for beat deletion (before deleting)
+    await deleteServerSupabase
+      .from('audit_logs')
+      .insert({
+        table_name: 'beats',
+        operation: 'DELETE',
+        old_data: existingBeat,
+        new_data: null,
+        changed_by: user.id,
+        changed_at: new Date().toISOString(),
+        ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        user_agent: request.headers.get('user-agent') || 'unknown'
+      })
 
     // Delete the beat
     const { error: deleteError } = await deleteServerSupabase
@@ -301,8 +375,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'Failed to delete beat' }, { status: 500 })
     }
 
-    // Log the deletion for audit purposes
-    console.log(`Beat ${id} (${existingBeat.name}) deleted by user ${user.id} (${user.email})`)
+    // Log the deletion for audit purposes (sanitized)
+    console.log(`Beat ${id} (${existingBeat.name}) deleted by user ${user.id}`)
 
     return NextResponse.json({ 
       message: 'Beat deleted successfully',
