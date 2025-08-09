@@ -53,20 +53,52 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json()
-    const { rank, full_name, email, contact_number, province, unit, sub_unit } = body
+    const { rank, full_name, email, contact_number, province, unit, sub_unit, password } = body
 
     // Validate required fields
-    if (!rank || !full_name || !email || !province || !unit || !sub_unit) {
+    if (!rank || !full_name || !email || !province || !unit || !sub_unit || !password) {
       return NextResponse.json(
-        { error: 'Missing required fields: rank, full_name, email, province, unit, sub_unit' },
+        { error: 'Missing required fields: rank, full_name, email, province, unit, sub_unit, password' },
         { status: 400 }
       )
     }
 
-    // Create personnel record
+    // Step 1: Create Supabase Auth user first
+    const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true, // Auto-confirm email
+      user_metadata: {
+        full_name,
+        rank,
+        role: 'Personnel',
+        province,
+        unit,
+        sub_unit
+      }
+    })
+
+    if (authError) {
+      console.error('Error creating auth user:', authError)
+      
+      if (authError.message?.includes('already registered')) {
+        return NextResponse.json(
+          { error: 'Email already exists' },
+          { status: 409 }
+        )
+      }
+      
+      return NextResponse.json(
+        { error: 'Failed to create authentication account' },
+        { status: 500 }
+      )
+    }
+
+    // Step 2: Create personnel record with the auth user ID
     const { data: personnel, error: createError } = await supabaseAdmin
       .from('personnel')
       .insert({
+        id: authUser.user.id, // Use the auth user ID
         rank,
         full_name,
         email,
@@ -81,12 +113,8 @@ export async function POST(request: NextRequest) {
     if (createError) {
       console.error('Error creating personnel:', createError)
       
-      if (createError.code === '23505') {
-        return NextResponse.json(
-          { error: 'Email already exists' },
-          { status: 409 }
-        )
-      }
+      // If personnel creation fails, clean up the auth user
+      await supabaseAdmin.auth.admin.deleteUser(authUser.user.id)
       
       return NextResponse.json(
         { error: 'Failed to create personnel account' },
