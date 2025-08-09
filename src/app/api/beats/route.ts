@@ -78,60 +78,8 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) {
-      console.error('Supabase insert error:', error)
       return NextResponse.json({ error: 'Failed to create beat' }, { status: 500 })
     }
-
-    // Get assigned personnel information for audit log
-    let assignedPersonnelInfo = []
-    
-    // Check if this beat will have personnel assigned (from the frontend call)
-    // We'll check for beat_personnel entries created within the next few seconds
-    setTimeout(async () => {
-      try {
-        const { data: personnelAssignments } = await supabase
-          .from('beat_personnel')
-          .select(`
-            *,
-            personnel!inner (
-              id,
-              full_name,
-              rank,
-              email
-            )
-          `)
-          .eq('beat_id', data.id)
-
-        if (personnelAssignments && personnelAssignments.length > 0) {
-          // Update the audit log with personnel information
-          const enhancedBeatData = {
-            ...data,
-            assigned_personnel: personnelAssignments.map(assignment => ({
-              personnel_id: assignment.personnel_id,
-              full_name: assignment.personnel?.full_name,
-              rank: assignment.personnel?.rank,
-              email: assignment.personnel?.email,
-              acceptance_status: assignment.acceptance_status,
-              assigned_at: assignment.assigned_at
-            }))
-          }
-
-          // Update the existing audit log entry with personnel information
-          await supabase
-            .from('audit_logs')
-            .update({
-              new_data: enhancedBeatData
-            })
-            .eq('table_name', 'beats')
-            .eq('operation', 'INSERT')
-            .eq('changed_by', user.id)
-            .order('changed_at', { ascending: false })
-            .limit(1)
-        }
-      } catch (updateError) {
-        console.error('Error updating audit log with personnel info:', updateError)
-      }
-    }, 2000) // Wait 2 seconds for personnel assignments to be created
 
     // Initial audit log for beat creation
     await supabase
@@ -147,11 +95,8 @@ export async function POST(request: NextRequest) {
         user_agent: request.headers.get('user-agent') || 'unknown'
       })
 
-    console.log(`Beat ${data.id} (${data.name}) created by user ${user.id}`)
-
     return NextResponse.json(data)
   } catch (error) {
-    console.error('Error creating beat:', error)
     return NextResponse.json({ error: 'Failed to create beat' }, { status: 500 })
   }
 }

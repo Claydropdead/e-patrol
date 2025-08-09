@@ -366,7 +366,8 @@ export async function DELETE(
             personnel_id: assignment.personnel_id,
             full_name: assignment.personnel?.full_name,
             rank: assignment.personnel?.rank,
-            email: assignment.personnel?.email,
+            // Mask email for privacy
+            email: assignment.personnel?.email ? assignment.personnel.email.replace(/(.{2}).*@/, '$1***@') : null,
             acceptance_status: assignment.acceptance_status,
             assigned_at: assignment.assigned_at
           }))

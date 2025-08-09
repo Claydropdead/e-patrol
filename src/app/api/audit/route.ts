@@ -67,19 +67,14 @@ export async function GET(request: NextRequest) {
         .limit(1)
 
       if (testError) {
-        console.error('Audit logs table test error:', testError)
         return NextResponse.json(
           { error: `Database error: ${testError.message}` },
           { status: 400 }
         )
       }
 
-      // If we get here, the table exists. Let's check what columns are available
-      const sampleRecord = testData?.[0]
-      console.log('Sample audit log record structure:', sampleRecord ? Object.keys(sampleRecord) : 'No records found')
-
+      // If we get here, the table exists
     } catch (error) {
-      console.error('Error testing audit_logs table:', error)
       return NextResponse.json(
         { error: 'Failed to access audit_logs table' },
         { status: 500 }
@@ -111,14 +106,11 @@ export async function GET(request: NextRequest) {
       .range(from, to)
 
     if (auditError) {
-      console.error('Audit logs query error:', auditError)
       return NextResponse.json(
         { error: `Query error: ${auditError.message}` },
         { status: 400 }
       )
     }
-
-    console.log('Successfully fetched audit logs:', auditLogs?.length || 0, 'records')
 
     // Process audit logs to include user names (enhanced lookup from ALL user tables)
     const userIds = [...new Set((auditLogs || []).map((log: Record<string, unknown>) => log.changed_by).filter(Boolean))]

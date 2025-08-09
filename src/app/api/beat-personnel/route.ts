@@ -30,13 +30,11 @@ export async function GET() {
       .order('assigned_at', { ascending: false })
 
     if (error) {
-      console.error('Supabase query error:', error)
       return NextResponse.json({ error: 'Failed to fetch beat personnel' }, { status: 500 })
     }
 
     return NextResponse.json(beatPersonnelData || [])
   } catch (error) {
-    console.error('Error fetching beat personnel:', error)
     return NextResponse.json({ error: 'Failed to fetch beat personnel' }, { status: 500 })
   }
 }
@@ -94,7 +92,6 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error) {
-      console.error('Supabase insert error:', error)
       return NextResponse.json({ error: 'Failed to assign personnel to beat' }, { status: 500 })
     }
 
@@ -112,11 +109,8 @@ export async function POST(request: NextRequest) {
         user_agent: request.headers.get('user-agent') || 'unknown'
       })
 
-    console.log(`Personnel ${data.personnel_id} assigned to beat ${data.beat_id} by user ${user.id}`)
-
     return NextResponse.json(data)
   } catch (error) {
-    console.error('Error assigning personnel to beat:', error)
     return NextResponse.json({ error: 'Failed to assign personnel to beat' }, { status: 500 })
   }
 }
