@@ -255,7 +255,12 @@ export function AuditLogsViewer() {
       'province': 'Province',
       'unit': 'Unit',
       'sub_unit': 'Sub Unit',
-      'contact_number': 'Contact Number'
+      'contact_number': 'Contact Number',
+      'center_lat': 'Center Latitude',
+      'center_lng': 'Center Longitude',
+      'radius_meters': 'Radius (meters)',
+      'address': 'Address',
+      'assigned_personnel': 'Assigned Personnel'
     }
 
     const relevantFields = Object.keys(data).filter(field => 
@@ -271,6 +276,28 @@ export function AuditLogsViewer() {
         {relevantFields.map(field => {
           const label = fieldLabels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
           let value = data[field]
+          
+          // Handle assigned personnel array
+          if (field === 'assigned_personnel' && Array.isArray(value)) {
+            if (value.length === 0) {
+              value = 'No personnel assigned'
+            } else {
+              return (
+                <div key={field} className="space-y-1">
+                  <span className="font-medium text-gray-700">{label}:</span>
+                  <div className="ml-4 space-y-1">
+                    {value.map((person: any, index: number) => (
+                      <div key={index} className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
+                        <div><strong>{person.full_name || 'Unknown'}</strong> ({person.rank || 'N/A'})</div>
+                        {person.email && <div className="text-gray-600">Email: {person.email}</div>}
+                        <div className="text-gray-600">Status: {person.acceptance_status || 'Unknown'}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            }
+          }
           
           // Format boolean values
           if (typeof value === 'boolean') {
