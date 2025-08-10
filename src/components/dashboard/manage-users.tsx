@@ -178,10 +178,6 @@ export function ManageUsers() {
     return Math.ceil(total / ITEMS_PER_PAGE)
   }, [activeTab, totalUsers, ITEMS_PER_PAGE])
   
-  // Auto refresh state
-  const [autoRefresh, setAutoRefresh] = useState(false)
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
-  
   // Edit dialog states
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<AdminUser | PersonnelUser | null>(null)
@@ -198,20 +194,9 @@ export function ManageUsers() {
   // Simple cache for assignment history to avoid repeated API calls
   const [historyCache, setHistoryCache] = useState<Record<string, AssignmentHistory[]>>({})
 
-  // Auto-refresh every 2 minutes when enabled (reduced frequency)
-  useEffect(() => {
-    if (!autoRefresh) return
-    const interval = setInterval(() => {
-      refresh()
-      setLastRefresh(new Date())
-    }, 120000) // Changed from 30 seconds to 2 minutes
-    return () => clearInterval(interval)
-  }, [autoRefresh, refresh]) // Added refresh dependency
-
   // Manual refresh function for button click
   const handleManualRefresh = useCallback(() => {
     refresh()
-    setLastRefresh(new Date())
     toast.success('Users data refreshed')
   }, [refresh]) // Added refresh dependency
 
@@ -587,10 +572,24 @@ export function ManageUsers() {
         throw new Error('Failed to update user status')
       }
 
+      // Optimistic update - immediately update the state to reflect the change
+      if (userType === 'admin') {
+        setUsersData(prev => prev ? {
+          ...prev,
+          adminUsers: prev.adminUsers.map(user => 
+            user.id === userId ? { ...user, is_active: !user.is_active } : user
+          )
+        } : null)
+      } else {
+        setUsersData(prev => prev ? {
+          ...prev,
+          personnelUsers: prev.personnelUsers.map(user => 
+            user.id === userId ? { ...user, is_active: !user.is_active } : user
+          )
+        } : null)
+      }
+
       toast.success('User status updated successfully')
-      
-      // Refresh data to ensure consistency
-      setTimeout(() => refresh(), 1000)
     } catch (error) {
       toast.error('Failed to update user status')
       console.error('Error updating user status:', error)
@@ -657,15 +656,42 @@ export function ManageUsers() {
 
       const result = await response.json()
 
-      // Show appropriate success message
+      // Optimistic update - immediately update the state to reflect the change
       if (result.type === 'permanent') {
+        // Remove user completely from the list
+        if (userType === 'admin') {
+          setUsersData(prev => prev ? {
+            ...prev,
+            adminUsers: prev.adminUsers.filter(u => u.id !== userId)
+          } : null)
+          setTotalUsers(prev => ({ ...prev, admin: prev.admin - 1 }))
+        } else {
+          setUsersData(prev => prev ? {
+            ...prev,
+            personnelUsers: prev.personnelUsers.filter(u => u.id !== userId)
+          } : null)
+          setTotalUsers(prev => ({ ...prev, personnel: prev.personnel - 1 }))
+        }
         toast.success(`${user.full_name} has been permanently deleted`)
       } else if (result.type === 'deactivated') {
+        // Update user status to inactive
+        if (userType === 'admin') {
+          setUsersData(prev => prev ? {
+            ...prev,
+            adminUsers: prev.adminUsers.map(u => 
+              u.id === userId ? { ...u, is_active: false } : u
+            )
+          } : null)
+        } else {
+          setUsersData(prev => prev ? {
+            ...prev,
+            personnelUsers: prev.personnelUsers.map(u => 
+              u.id === userId ? { ...u, is_active: false } : u
+            )
+          } : null)
+        }
         toast.success(`${user.full_name} has been deactivated`)
       }
-      
-      // Refresh data to ensure consistency
-      setTimeout(() => refresh(), 1000)
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to delete user'
@@ -728,6 +754,23 @@ export function ManageUsers() {
 
       const result = await response.json()
 
+      // Optimistic update - immediately update the state to reflect the changes
+      if (editingUserType === 'admin') {
+        setUsersData(prev => prev ? {
+          ...prev,
+          adminUsers: prev.adminUsers.map(user => 
+            user.id === editingUser?.id ? { ...user, ...editForm } : user
+          )
+        } : null)
+      } else {
+        setUsersData(prev => prev ? {
+          ...prev,
+          personnelUsers: prev.personnelUsers.map(user => 
+            user.id === editingUser?.id ? { ...user, ...editForm } : user
+          )
+        } : null)
+      }
+
       toast.success('User updated successfully')
       setEditDialogOpen(false)
       setEditingUser(null)
@@ -744,9 +787,6 @@ export function ManageUsers() {
           })
         }
       }
-
-      // Refresh data to ensure consistency
-      setTimeout(() => refresh(), 1000)
 
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to update user')
@@ -862,20 +902,6 @@ export function ManageUsers() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Manage Users</h1>
           <p className="text-gray-600 mt-1">View and manage all admin accounts and personnel</p>
-          <div className="flex items-center space-x-4 mt-2">
-            <p className="text-sm text-gray-500">
-              Last updated: {lastRefresh.toLocaleTimeString()}
-            </p>
-            <label className="flex items-center space-x-2 text-sm">
-              <input
-                type="checkbox"
-                checked={autoRefresh}
-                onChange={(e) => setAutoRefresh(e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="text-gray-600">Auto-refresh (30s)</span>
-            </label>
-          </div>
         </div>
         <div className="flex items-center space-x-2">
           <Button onClick={handleManualRefresh} variant="outline" className="flex items-center space-x-2">
@@ -937,10 +963,6 @@ export function ManageUsers() {
             <span>Personnel</span>
           </TabsTrigger>
         </TabsList>
-
-        <TabsContent value="admin" className="mt-6">
-          <AdminUsersTable users={filteredAdminUsers} loading={loading} onToggleStatus={handleToggleUserStatus} onDelete={handleDeleteUser} />
-        </TabsContent>
 
         <TabsContent value="admin" className="mt-6">
           <AdminUsersTable users={filteredAdminUsers} loading={loading} onToggleStatus={handleToggleUserStatus} onDelete={handleDeleteUser} />
