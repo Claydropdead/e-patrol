@@ -63,12 +63,50 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Fetch personnel data (only basic info needed for assignments)
-    const { data: personnel, error: personnelError } = await supabaseAdmin
+    // Parse query parameters
+    const url = new URL(request.url)
+    const province = url.searchParams.get('province')
+    const unit = url.searchParams.get('unit')
+    const subUnit = url.searchParams.get('sub_unit')
+    const active = url.searchParams.get('active')
+    const exclude = url.searchParams.get('exclude')
+    const ids = url.searchParams.get('ids')
+
+    // Build query with filters
+    let query = supabaseAdmin
       .from('personnel')
-      .select('id, full_name, rank, unit, sub_unit')
-      .eq('is_active', true)
-      .order('full_name')
+      .select('id, full_name, rank, unit, sub_unit, email, province')
+
+    // Apply filters
+    if (ids) {
+      // If specific IDs are requested, only return those
+      const idArray = ids.split(',').filter(Boolean)
+      query = query.in('id', idArray)
+    } else {
+      // Apply other filters only if not fetching specific IDs
+      if (active === 'true') {
+        query = query.eq('is_active', true)
+      }
+
+      if (province && province !== 'all') {
+        query = query.eq('province', province)
+      }
+
+      if (unit && unit !== 'all') {
+        query = query.eq('unit', unit)
+      }
+
+      if (subUnit && subUnit !== 'all') {
+        query = query.eq('sub_unit', subUnit)
+      }
+
+      if (exclude) {
+        query = query.neq('id', exclude)
+      }
+    }
+
+    // Fetch personnel data
+    const { data: personnel, error: personnelError } = await query.order('full_name')
 
     if (personnelError) {
       console.error('Error fetching personnel:', personnelError)

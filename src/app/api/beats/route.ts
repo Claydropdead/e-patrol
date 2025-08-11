@@ -72,7 +72,9 @@ export async function POST(request: NextRequest) {
         radius_meters: body.radius,
         address: body.description,
         unit: body.unit,
-        sub_unit: body.sub_unit
+        sub_unit: body.sub_unit,
+        duty_start_time: body.duty_start_time || null,
+        duty_end_time: body.duty_end_time || null
       }])
       .select()
       .single()

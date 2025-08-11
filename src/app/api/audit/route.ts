@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
     const table = searchParams.get('table') || ''
     const operation = searchParams.get('operation') || ''
     const userId = searchParams.get('userId') || ''
+    const beatId = searchParams.get('beat_id') || ''
 
     // First, let's test if the audit_logs table exists by doing a simple query
     try {
@@ -92,10 +93,20 @@ export async function GET(request: NextRequest) {
       query = query.eq('table_name', table)
     }
     if (operation && operation !== 'all') {
-      query = query.eq('operation', operation)
+      // Support multiple operations separated by comma
+      if (operation.includes(',')) {
+        const operations = operation.split(',').map(op => op.trim())
+        query = query.in('operation', operations)
+      } else {
+        query = query.eq('operation', operation)
+      }
     }
     if (userId) {
       query = query.eq('changed_by', userId)  // Use changed_by instead of user_id
+    }
+    if (beatId) {
+      // Filter by beat_id in the JSON data (for beat_personnel table)
+      query = query.or(`old_data->beat_id.eq.${beatId},new_data->beat_id.eq.${beatId}`)
     }
 
     // Apply pagination

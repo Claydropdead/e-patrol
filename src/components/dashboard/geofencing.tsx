@@ -64,6 +64,21 @@ interface GeofenceBeat {
       reason?: string
     }
   }
+  // Detailed personnel information with acceptance status
+  assignedPersonnelDetails?: {
+    id: string
+    name: string
+    rank: string
+    email: string
+    status: string // acceptance_status: 'pending' | 'accepted' | 'declined'
+    assignedAt: string
+    acceptedAt?: string
+    assignmentType: 'original' | 'replacement'
+    replacementInfo?: {
+      reason?: string
+      replaced_at?: string
+    } | null
+  }[]
 }
 
 interface Violation {
@@ -352,20 +367,44 @@ export function GeofencingContent() {
             createdAt: beat.created_at as string,
             violations: 0, // TODO: implement violations tracking
             lastActivity: beat.updated_at as string || beat.created_at as string,
-            beatStatus: acceptedPersonnel.length > 0 ? 'on_duty' : 
-                       pendingPersonnel.length > 0 ? 'pending' : 'completed',
+            beatStatus: beat.beat_status as 'pending' | 'on_duty' | 'completed' || 'pending',
             assignedPersonnelDetails: beatPersonnelData
               .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id)
-              .map((bp: Record<string, unknown>) => ({
-                id: (bp.personnel as Record<string, unknown>)?.id as string,
-                name: (bp.personnel as Record<string, unknown>)?.full_name as string,
-                rank: (bp.personnel as Record<string, unknown>)?.rank as string,
-                email: (bp.personnel as Record<string, unknown>)?.email as string,
-                status: bp.acceptance_status as string,
-                assignedAt: bp.assigned_at as string,
-                acceptedAt: bp.accepted_at as string
-              }))
-              .filter((detail: any) => detail.id && detail.name),
+              .map((bp: Record<string, unknown>) => {
+                try {
+                  const personnel = bp.personnel as Record<string, unknown> | null
+                  const replacementInfo = bp.replacement_info as Record<string, unknown> | null
+                  
+                  return {
+                    id: String(personnel?.id || bp.personnel_id || ''),
+                    name: String(personnel?.full_name || 'Unknown'),
+                    rank: String(personnel?.rank || 'Unknown'),
+                    email: String(personnel?.email || 'Unknown'),
+                    status: String(bp.acceptance_status || 'pending'),
+                    assignedAt: String(bp.assigned_at || new Date().toISOString()),
+                    acceptedAt: String(bp.accepted_at || ''),
+                    assignmentType: String(bp.assignment_type || 'original') as 'original' | 'replacement',
+                    replacementInfo: replacementInfo ? {
+                      reason: String(replacementInfo.reason || ''),
+                      replaced_at: String(replacementInfo.replaced_at || '')
+                    } : null
+                  }
+                } catch (mapError) {
+                  console.error('Error mapping personnel:', mapError, bp)
+                  return null
+                }
+              })
+              .filter((detail: any) => {
+                if (!detail || !detail.id || !detail.name || detail.name === 'Unknown') {
+                  return false
+                }
+                // Make sure all required fields are strings
+                if (typeof detail.name !== 'string' || typeof detail.rank !== 'string' || typeof detail.email !== 'string') {
+                  console.warn('Invalid personnel data structure:', detail)
+                  return false
+                }
+                return true
+              }),
             dutyStartTime: beat.created_at as string,
             estimatedDuration: '8 hours'
           }
@@ -503,7 +542,7 @@ export function GeofencingContent() {
   const stats = useMemo(() => {
     const activeBeats = beats.filter(beat => beat.beatStatus === 'on_duty').length
     const pendingBeats = beats.filter(beat => beat.beatStatus === 'pending').length
-    const totalPersonnel = beats.reduce((sum, beat) => sum + beat.assignedPersonnel.length, 0)
+    const totalPersonnel = beats.reduce((sum, beat) => sum + (beat.assignedPersonnelDetails?.length || 0), 0)
     
     return {
       totalBeats: totalBeats,
@@ -1011,26 +1050,25 @@ function BeatTableRow({
       <td className="py-4 px-2">
         <div>
           <div className="text-sm font-medium text-gray-900">
-            {beat.assignedPersonnel.length} personnel
+            {beat.assignedPersonnelDetails?.length || 0} personnel
           </div>
           <div className="text-xs text-gray-500 space-y-1 mt-1">
-            {beat.assignedPersonnel.slice(0, 2).map((person, index) => (
-              <div key={index} className="flex items-center gap-1">
-                <span>{person}</span>
-                {beat.personnelAcceptance?.[person] && (
-                  <Badge className={`text-xs px-1 py-0 ${
-                    beat.personnelAcceptance[person].status === 'accepted' ? 'bg-green-100 text-green-700' :
-                    beat.personnelAcceptance[person].status === 'declined' ? 'bg-red-100 text-red-700' :
-                    'bg-yellow-100 text-yellow-700'
-                  }`}>
-                    {beat.personnelAcceptance[person].status}
-                  </Badge>
-                )}
+            {beat.assignedPersonnelDetails?.slice(0, 2).map((person, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <span className="font-medium">{person.rank} {person.name}</span>
+                <Badge className={`text-xs px-2 py-0.5 ${
+                  person.status === 'accepted' ? 'bg-green-100 text-green-700 border-green-200' :
+                  person.status === 'declined' ? 'bg-red-100 text-red-700 border-red-200' :
+                  'bg-yellow-100 text-yellow-700 border-yellow-200'
+                }`}>
+                  {person.status === 'accepted' ? 'Accepted' : 
+                   person.status === 'declined' ? 'Declined' : 'Pending'}
+                </Badge>
               </div>
             ))}
-            {beat.assignedPersonnel.length > 2 && (
+            {(beat.assignedPersonnelDetails?.length || 0) > 2 && (
               <div className="text-xs text-gray-400">
-                +{beat.assignedPersonnel.length - 2} more
+                +{(beat.assignedPersonnelDetails?.length || 0) - 2} more
               </div>
             )}
           </div>
@@ -1126,7 +1164,9 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
           radius: parseInt(formData.radius),
           unit: formData.unit,
           sub_unit: formData.subUnit,
-          description: formData.address
+          description: formData.address,
+          duty_start_time: formData.dutyStartTime || null,
+          duty_end_time: formData.dutyEndTime || null
         })
       })
 
@@ -1609,29 +1649,32 @@ function BeatDetailsDialog({
           <div>
             <h3 className="text-lg font-medium text-gray-900 mb-3">Assigned Personnel</h3>
             <div className="space-y-3">
-              {beat.assignedPersonnel.map((person, index) => {
-                const acceptance = beat.personnelAcceptance?.[person]
-                return (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <p className="font-medium text-gray-900">{person}</p>
-                      <p className="text-sm text-gray-600">{beat.unit} - {beat.subUnit}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className={`text-xs ${
-                        acceptance?.status === 'accepted' ? 'bg-green-100 text-green-800' :
-                        acceptance?.status === 'declined' ? 'bg-red-100 text-red-800' :
-                        'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {acceptance?.status || 'pending'}
-                      </Badge>
-                      {acceptance?.timestamp && (
-                        <span className="text-xs text-gray-500">{acceptance.timestamp}</span>
+              {beat.assignedPersonnelDetails?.map((person, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="font-medium text-gray-900">{person.rank} {person.name}</p>
+                    <p className="text-sm text-gray-600">{person.email}</p>
+                    <p className="text-xs text-gray-500">
+                      Assigned: {new Date(person.assignedAt).toLocaleDateString()}
+                      {person.acceptedAt && (
+                        <span> • Accepted: {new Date(person.acceptedAt).toLocaleDateString()}</span>
                       )}
-                    </div>
+                    </p>
                   </div>
-                )
-              })}
+                  <div className="flex items-center gap-2">
+                    <Badge className={`${
+                      person.status === 'accepted' ? 'bg-green-100 text-green-700 border-green-200' :
+                      person.status === 'declined' ? 'bg-red-100 text-red-700 border-red-200' :
+                      'bg-yellow-100 text-yellow-700 border-yellow-200'
+                    }`}>
+                      {person.status === 'accepted' ? 'Accepted' : 
+                       person.status === 'declined' ? 'Declined' : 'Pending'}
+                    </Badge>
+                  </div>
+                </div>
+              )) || (
+                <p className="text-gray-500 text-center py-4">No personnel assigned to this beat</p>
+              )}
             </div>
           </div>
         </div>
@@ -1674,6 +1717,312 @@ function EditBeatDialog({
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  
+  // Replacement functionality state
+  const [showReplacementDialog, setShowReplacementDialog] = useState(false)
+  const [personnelToReplace, setPersonnelToReplace] = useState<any>(null)
+  const [availablePersonnel, setAvailablePersonnel] = useState<any[]>([])
+  const [selectedReplacement, setSelectedReplacement] = useState<string>('')
+  const [replacementReason, setReplacementReason] = useState<string>('')
+  const [isReplacing, setIsReplacing] = useState(false)
+  
+  // Replacement history state
+  const [showReplacementHistory, setShowReplacementHistory] = useState(false)
+  const [replacementHistory, setReplacementHistory] = useState<any[]>([])
+  const [loadingHistory, setLoadingHistory] = useState(false)
+
+  // Handle personnel replacement
+  const handleReplacementClick = (personnel: any) => {
+    setPersonnelToReplace(personnel)
+    // Fetch available personnel for replacement
+    fetchAvailablePersonnel()
+    setShowReplacementDialog(true)
+  }
+
+  const handleRemovePersonnel = async (personnelId: string) => {
+    try {
+      setIsReplacing(true)
+      
+      const session = await useAuthStore.getState().getValidSession()
+      if (!session) {
+        throw new Error('Authentication required')
+      }
+      
+      // Remove personnel from beat assignment via API
+      const response = await fetch('/api/beat-personnel', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          personnel_id: personnelId,
+          beat_id: beat.id,
+          status: 'declined'
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to remove personnel')
+      }
+      
+      // Refresh beat data
+      if (onBeatUpdated) {
+        onBeatUpdated()
+      }
+      
+      // Show success toast
+      toast.success('Personnel removed from beat assignment')
+    } catch (error) {
+      console.error('Error removing personnel:', error)
+      toast.error('Failed to remove personnel')
+    } finally {
+      setIsReplacing(false)
+    }
+  }
+
+  const fetchAvailablePersonnel = async () => {
+    try {
+      const session = await useAuthStore.getState().getValidSession()
+      if (!session) {
+        throw new Error('Authentication required')
+      }
+      
+      console.log('Fetching available personnel for:', {
+        province: beat.province,
+        unit: beat.unit,
+        subUnit: beat.subUnit,
+        excludeId: personnelToReplace?.id
+      })
+      
+      // Build query parameters
+      const params = new URLSearchParams({
+        active: 'true'
+      })
+      
+      // Add exclude parameter only if we have a personnel to replace
+      if (personnelToReplace?.id) {
+        params.append('exclude', personnelToReplace.id)
+      }
+      
+      // Filter by unit and sub-unit assignment (more precise than province)
+      if (beat.unit) {
+        params.append('unit', beat.unit)
+      }
+      
+      if (beat.subUnit) {
+        params.append('sub_unit', beat.subUnit)
+      }
+      
+      // Fetch personnel not currently assigned to any beat or available for assignment
+      const response = await fetch(`/api/personnel/list?${params.toString()}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+      
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error('API response error:', response.status, errorText)
+        throw new Error(`API request failed: ${response.status} ${response.statusText}`)
+      }
+      
+      const data = await response.json()
+      console.log('Available personnel response:', data)
+      
+      setAvailablePersonnel(data.data || [])
+    } catch (error) {
+      console.error('Error fetching available personnel:', error)
+      setAvailablePersonnel([])
+      toast.error('Failed to fetch available personnel')
+    }
+  }
+
+  const handleReplacementSubmit = async () => {
+    if (!selectedReplacement || !personnelToReplace) return
+    
+    try {
+      setIsReplacing(true)
+      
+      const session = await useAuthStore.getState().getValidSession()
+      if (!session) {
+        throw new Error('Authentication required')
+      }
+      
+      // Remove old assignment and add new assignment via API
+      const response = await fetch('/api/beat-personnel', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          beat_id: beat.id,
+          old_personnel_id: personnelToReplace.id,
+          new_personnel_id: selectedReplacement,
+          reason: replacementReason || 'Personnel replacement'
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to replace personnel')
+      }
+      
+      // Close dialog and refresh
+      setShowReplacementDialog(false)
+      setPersonnelToReplace(null)
+      setSelectedReplacement('')
+      setReplacementReason('')
+      if (onBeatUpdated) {
+        onBeatUpdated()
+      }
+      
+      toast.success('Personnel replaced successfully')
+    } catch (error) {
+      console.error('Error replacing personnel:', error)
+      toast.error('Failed to replace personnel')
+    } finally {
+      setIsReplacing(false)
+    }
+  }
+
+  const fetchReplacementHistory = async () => {
+    try {
+      setLoadingHistory(true)
+      
+      const session = await useAuthStore.getState().getValidSession()
+      if (!session) {
+        throw new Error('Authentication required')
+      }
+      
+      // Fetch replacement history using our dedicated API
+      const response = await fetch(`/api/beat-personnel/history?beat_id=${beat.id}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+      
+      if (!response.ok) {
+        if (response.status === 403) {
+          // User doesn't have sufficient privileges
+          setReplacementHistory([{
+            type: 'info',
+            timestamp: new Date().toISOString(),
+            personnel: { name: 'System Notice', email: '' },
+            reason: 'Replacement history is only available to authorized personnel. Contact your administrator for access.'
+          }])
+          return
+        }
+        throw new Error(`Failed to fetch replacement history: ${response.status}`)
+      }
+      
+      const data = await response.json()
+      console.log('Replacement history:', data)
+      
+      setReplacementHistory(data.data || [])
+      
+    } catch (error) {
+      console.error('Error fetching replacement history:', error)
+      // Provide a user-friendly fallback message
+      setReplacementHistory([{
+        type: 'error',
+        timestamp: new Date().toISOString(),
+        personnel: { name: 'System Notice', email: '' },
+        reason: 'Unable to load replacement history. Please ensure the database is properly configured and you have the necessary permissions.'
+      }])
+    } finally {
+      setLoadingHistory(false)
+    }
+  }
+
+  const processAuditLogsForHistory = async (auditLogs: any[], session: any) => {
+    // Group logs by timestamp and create replacement events
+    const events: any[] = []
+    
+    // Get all personnel IDs from the logs to fetch their names
+    const personnelIds = new Set<string>()
+    
+    for (const log of auditLogs) {
+      if (log.old_data?.personnel_id) {
+        personnelIds.add(log.old_data.personnel_id)
+      }
+      if (log.new_data?.personnel_id) {
+        personnelIds.add(log.new_data.personnel_id)
+      }
+    }
+    
+    // Fetch personnel names
+    const personnelNames: Record<string, string> = {}
+    if (personnelIds.size > 0) {
+      try {
+        const response = await fetch(`/api/personnel/list?ids=${Array.from(personnelIds).join(',')}`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`
+          }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          for (const person of data.data || []) {
+            personnelNames[person.id] = `${person.rank} ${person.full_name}`
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching personnel names for history:', error)
+      }
+    }
+    
+    for (let i = 0; i < auditLogs.length; i++) {
+      const log = auditLogs[i]
+      
+      if (log.operation === 'DELETE' && log.old_data) {
+        // Look for a corresponding INSERT within a few seconds
+        const insertLog = auditLogs.find((l, idx) => 
+          idx > i && 
+          l.operation === 'INSERT' && 
+          Math.abs(new Date(l.changed_at).getTime() - new Date(log.changed_at).getTime()) < 10000 // 10 seconds
+        )
+        
+        if (insertLog) {
+          events.push({
+            type: 'replacement',
+            timestamp: log.changed_at,
+            oldPersonnel: personnelNames[log.old_data?.personnel_id] || log.old_data?.personnel_id || 'Unknown',
+            newPersonnel: personnelNames[insertLog.new_data?.personnel_id] || insertLog.new_data?.personnel_id || 'Unknown',
+            changedBy: log.changed_by_name || log.changed_by || 'System',
+            reason: 'Personnel replacement'
+          })
+        } else {
+          events.push({
+            type: 'removal',
+            timestamp: log.changed_at,
+            personnel: personnelNames[log.old_data?.personnel_id] || log.old_data?.personnel_id || 'Unknown',
+            changedBy: log.changed_by_name || log.changed_by || 'System',
+            reason: 'Personnel removed'
+          })
+        }
+      } else if (log.operation === 'INSERT' && log.new_data) {
+        // Check if this isn't part of a replacement
+        const deleteLog = auditLogs.find((l, idx) => 
+          idx < i && 
+          l.operation === 'DELETE' && 
+          Math.abs(new Date(l.changed_at).getTime() - new Date(log.changed_at).getTime()) < 10000 // 10 seconds
+        )
+        
+        if (!deleteLog) {
+          events.push({
+            type: 'assignment',
+            timestamp: log.changed_at,
+            personnel: personnelNames[log.new_data?.personnel_id] || log.new_data?.personnel_id || 'Unknown',
+            changedBy: log.changed_by_name || log.changed_by || 'System',
+            reason: 'Personnel assigned'
+          })
+        }
+      }
+    }
+    
+    return events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+  }
 
   // Handle form submission
   const handleSubmit = async () => {
@@ -1942,31 +2291,84 @@ function EditBeatDialog({
 
           {/* Current Personnel */}
           <div className="space-y-4">
-            <h3 className="text-lg font-medium text-gray-900">Current Personnel Assignment</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-medium text-gray-900">Current Personnel Assignment</h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  fetchReplacementHistory()
+                  setShowReplacementHistory(true)
+                }}
+                className="text-gray-600 hover:text-gray-700"
+              >
+                <Clock className="h-4 w-4 mr-2" />
+                View History
+              </Button>
+            </div>
             <div className="bg-gray-50 rounded-lg p-4">
               <div className="space-y-2">
-                {beat.assignedPersonnel.length > 0 ? (
-                  beat.assignedPersonnel.map((person, index) => (
-                    <div key={index} className="flex items-center justify-between p-2 bg-white rounded border">
-                      <div>
-                        <span className="font-medium">{person}</span>
-                        <span className="text-sm text-gray-500 ml-2">({beat.unit} - {beat.subUnit})</span>
+                {beat.assignedPersonnelDetails && beat.assignedPersonnelDetails.length > 0 ? (
+                  beat.assignedPersonnelDetails.map((person, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 bg-white rounded border">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{person.rank} {person.name}</span>
+                          <Badge className={`text-xs ${
+                            person.status === 'accepted' ? 'bg-green-100 text-green-700' :
+                            person.status === 'declined' ? 'bg-red-100 text-red-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {person.status === 'accepted' ? 'Accepted' : 
+                             person.status === 'declined' ? 'Declined' : 'Pending'}
+                          </Badge>
+                          <Badge className={`text-xs ${
+                            person.assignmentType === 'replacement' 
+                              ? 'bg-blue-100 text-blue-700' 
+                              : 'bg-gray-100 text-gray-700'
+                          }`}>
+                            {person.assignmentType === 'replacement' ? 'Replacement' : 'Original'}
+                          </Badge>
+                        </div>
+                        <div className="text-sm text-gray-500 mt-1">
+                          <p>{person.email}</p>
+                          <p>Assigned: {new Date(person.assignedAt).toLocaleDateString()}</p>
+                          {person.assignmentType === 'replacement' && person.replacementInfo?.reason && (
+                            <p className="text-blue-600">
+                              <span className="font-medium">Replacement reason:</span> {String(person.replacementInfo.reason)}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      {beat.personnelAcceptance?.[person] && (
-                        <Badge className={`text-xs ${
-                          beat.personnelAcceptance[person].status === 'accepted' ? 'bg-green-100 text-green-700' :
-                          beat.personnelAcceptance[person].status === 'declined' ? 'bg-red-100 text-red-700' :
-                          'bg-yellow-100 text-yellow-700'
-                        }`}>
-                          {beat.personnelAcceptance[person].status}
-                        </Badge>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {(person.status === 'declined' || person.status === 'pending') && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              // Set the person to be replaced
+                              setPersonnelToReplace(person)
+                              fetchAvailablePersonnel()
+                              setShowReplacementDialog(true)
+                            }}
+                            className="text-blue-600 hover:text-blue-700"
+                          >
+                            Replace
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRemovePersonnel(person.id)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          Remove
+                        </Button>
+                      </div>
                     </div>
                   ))
                 ) : (
-                  <div className="text-center text-gray-500 py-4">
-                    No personnel currently assigned to this beat
-                  </div>
+                  <p className="text-gray-500 text-center py-2">No personnel assigned</p>
                 )}
               </div>
             </div>
@@ -2001,6 +2403,158 @@ function EditBeatDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {/* Replacement Dialog */}
+      {showReplacementDialog && (
+        <Dialog open={showReplacementDialog} onOpenChange={setShowReplacementDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Replace Personnel</DialogTitle>
+              <DialogDescription>
+                Select a replacement for {personnelToReplace?.name} from personnel assigned to {beat.unit} - {beat.subUnit}
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="replacement">Available Personnel</Label>
+                <Select value={selectedReplacement} onValueChange={setSelectedReplacement}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select replacement personnel" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availablePersonnel.map((person) => (
+                      <SelectItem key={person.id} value={person.id}>
+                        {person.rank} {person.full_name} - {person.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="replacementReason">Replacement Reason</Label>
+                <Input
+                  id="replacementReason"
+                  type="text"
+                  value={replacementReason}
+                  onChange={(e) => setReplacementReason(e.target.value)}
+                  placeholder="e.g. Medical leave, Emergency assignment, Administrative requirement"
+                />
+              </div>
+              
+              {availablePersonnel.length === 0 && (
+                <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded">
+                  No available personnel found for replacement in {beat.unit} - {beat.subUnit}. All personnel in this unit may already be assigned.
+                </div>
+              )}
+            </div>
+            
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowReplacementDialog(false)
+                  setPersonnelToReplace(null)
+                  setSelectedReplacement('')
+                  setReplacementReason('')
+                }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleReplacementSubmit}
+                disabled={!selectedReplacement || isReplacing}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {isReplacing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Replacing...
+                  </>
+                ) : (
+                  'Replace Personnel'
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Replacement History Dialog */}
+      {showReplacementHistory && (
+        <Dialog open={showReplacementHistory} onOpenChange={setShowReplacementHistory}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Personnel Assignment History</DialogTitle>
+              <DialogDescription>
+                View the history of personnel assignments, replacements, and removals for {beat.name}
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              {loadingHistory ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <span className="ml-2 text-gray-600">Loading history...</span>
+                </div>
+              ) : replacementHistory.length > 0 ? (
+                <div className="space-y-3">
+                  {replacementHistory.map((event, index) => (
+                    <div key={index} className="border rounded-lg p-4 bg-gray-50">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge className={`${
+                              event.type === 'replacement' ? 'bg-blue-100 text-blue-700' :
+                              event.type === 'removal' ? 'bg-red-100 text-red-700' :
+                              'bg-green-100 text-green-700'
+                            }`}>
+                              {event.type === 'replacement' ? 'Replacement' :
+                               event.type === 'removal' ? 'Removal' : 'Assignment'}
+                            </Badge>
+                            <span className="text-sm text-gray-500">
+                              {new Date(event.timestamp).toLocaleString()}
+                            </span>
+                          </div>
+                          
+                          <div className="text-sm space-y-1">
+                            {event.type === 'replacement' ? (
+                              <>
+                                <p><span className="font-medium">Replaced:</span> {event.oldPersonnel?.name || 'Unknown'}</p>
+                                <p><span className="font-medium">With:</span> {event.newPersonnel?.name || 'Unknown'}</p>
+                              </>
+                            ) : event.type === 'removal' ? (
+                              <p><span className="font-medium">Removed:</span> {event.personnel?.name || event.personnel || 'Unknown'}</p>
+                            ) : (
+                              <p><span className="font-medium">Assigned:</span> {event.personnel?.name || event.personnel || 'Unknown'}</p>
+                            )}
+                            <p><span className="font-medium">Reason:</span> {event.reason || 'No reason provided'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <Clock className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p>No personnel assignment history found for this beat.</p>
+                </div>
+              )}
+            </div>
+            
+            <DialogFooter>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowReplacementHistory(false)}
+              >
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </Dialog>
   )
 }
