@@ -1763,8 +1763,19 @@ function EditBeatDialog({
       })
       
       if (!response.ok) {
-        throw new Error('Failed to remove personnel')
+        let errorData
+        try {
+          errorData = await response.json()
+        } catch (parseError) {
+          errorData = { error: `HTTP ${response.status}: ${response.statusText}` }
+        }
+        console.error('Delete response error:', errorData)
+        console.error('Response status:', response.status, response.statusText)
+        throw new Error(errorData.error || `Failed to remove personnel (${response.status})`)
       }
+      
+      const result = await response.json()
+      console.log('Delete success result:', result)
       
       // Refresh beat data
       if (onBeatUpdated) {

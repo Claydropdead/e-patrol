@@ -171,14 +171,92 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Return data structure using correct field names with user names
+    // Get all unique personnel and beat IDs from audit logs to resolve names
+    const personnelIds = new Set<string>()
+    const beatIds = new Set<string>()
+    
+    ;(auditLogs || []).forEach((log: Record<string, unknown>) => {
+      const oldData = log.old_data as Record<string, unknown> | null
+      const newData = log.new_data as Record<string, unknown> | null
+      
+      // Extract personnel IDs
+      if (oldData?.personnel_id) personnelIds.add(oldData.personnel_id as string)
+      if (newData?.personnel_id) personnelIds.add(newData.personnel_id as string)
+      if (oldData?.old_personnel_id) personnelIds.add(oldData.old_personnel_id as string)
+      if (newData?.old_personnel_id) personnelIds.add(newData.old_personnel_id as string)
+      if (oldData?.new_personnel_id) personnelIds.add(oldData.new_personnel_id as string)
+      if (newData?.new_personnel_id) personnelIds.add(newData.new_personnel_id as string)
+      
+      // Extract beat IDs
+      if (oldData?.beat_id) beatIds.add(oldData.beat_id as string)
+      if (newData?.beat_id) beatIds.add(newData.beat_id as string)
+    })
+
+    // Fetch personnel and beat names
+    const [personnelData, beatData] = await Promise.all([
+      personnelIds.size > 0 
+        ? supabaseAdmin
+            .from('personnel')
+            .select('id, full_name, rank')
+            .in('id', Array.from(personnelIds))
+        : { data: [] },
+      beatIds.size > 0
+        ? supabaseAdmin
+            .from('beats')
+            .select('id, name')
+            .in('id', Array.from(beatIds))
+        : { data: [] }
+    ])
+
+    // Create lookup maps
+    const personnelNameMap: Record<string, string> = {}
+    const beatNameMap: Record<string, string> = {}
+    
+    ;(personnelData.data || []).forEach((personnel: Record<string, unknown>) => {
+      if (personnel.id && personnel.full_name && personnel.rank) {
+        personnelNameMap[personnel.id as string] = `${personnel.rank} ${personnel.full_name}`
+      }
+    })
+    
+    ;(beatData.data || []).forEach((beat: Record<string, unknown>) => {
+      if (beat.id && beat.name) {
+        beatNameMap[beat.id as string] = beat.name as string
+      }
+    })
+
+    // Function to enhance data with readable names
+    const enhanceDataWithNames = (data: Record<string, unknown> | null): Record<string, unknown> | null => {
+      if (!data) return data
+      
+      const enhanced = { ...data }
+      
+      // Add readable names for personnel IDs
+      if (enhanced.personnel_id && personnelNameMap[enhanced.personnel_id as string]) {
+        enhanced.personnel_name = personnelNameMap[enhanced.personnel_id as string]
+      }
+      if (enhanced.old_personnel_id && personnelNameMap[enhanced.old_personnel_id as string]) {
+        enhanced.old_personnel_name = personnelNameMap[enhanced.old_personnel_id as string]
+      }
+      if (enhanced.new_personnel_id && personnelNameMap[enhanced.new_personnel_id as string]) {
+        enhanced.new_personnel_name = personnelNameMap[enhanced.new_personnel_id as string]
+      }
+      
+      // Add readable names for beat IDs
+      if (enhanced.beat_id && beatNameMap[enhanced.beat_id as string]) {
+        enhanced.beat_name = beatNameMap[enhanced.beat_id as string]
+      }
+      
+      return enhanced
+    }
+
+    // Return data structure using correct field names with user names and enhanced data
     const processedLogs = (auditLogs || []).map((log: Record<string, unknown>) => ({
       id: log.id,
       changed_at: log.changed_at,
       table_name: log.table_name,
       operation: log.operation,
-      old_data: log.old_data,
-      new_data: log.new_data,
+      old_data: enhanceDataWithNames(log.old_data as Record<string, unknown> | null),
+      new_data: enhanceDataWithNames(log.new_data as Record<string, unknown> | null),
       changed_by: log.changed_by,
       changed_by_name: userNameMap[log.changed_by as string] || null
     }))

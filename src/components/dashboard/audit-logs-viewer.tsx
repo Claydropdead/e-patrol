@@ -197,11 +197,19 @@ export function AuditLogsViewer() {
     const formatData = (data: Record<string, unknown> | null): string => {
       if (!data) return 'No data available'
       
-      const relevantFields = Object.keys(data).filter(field => 
+      // Prioritize readable fields over UUIDs
+      const priorityFields = ['personnel_name', 'beat_name', 'old_personnel_name', 'new_personnel_name', 'replacement_reason', 'full_name', 'email', 'role']
+      const otherFields = Object.keys(data).filter(field => 
         data[field] !== undefined && 
         data[field] !== null && 
-        !['id', 'password', 'created_at', 'updated_at'].includes(field)
+        !['id', 'password', 'created_at', 'updated_at', 'personnel_id', 'beat_id', 'old_personnel_id', 'new_personnel_id'].includes(field) &&
+        !priorityFields.includes(field)
       )
+      
+      const relevantFields = [
+        ...priorityFields.filter(field => data[field] !== undefined && data[field] !== null),
+        ...otherFields
+      ]
       
       if (relevantFields.length === 0) return 'No changes detected'
       
@@ -260,13 +268,23 @@ export function AuditLogsViewer() {
       'center_lng': 'Center Longitude',
       'radius_meters': 'Radius (meters)',
       'address': 'Address',
-      'assigned_personnel': 'Assigned Personnel'
+      'assigned_personnel': 'Assigned Personnel',
+      'beat_id': 'Beat ID',
+      'personnel_id': 'Personnel ID', 
+      'old_personnel_id': 'Old Personnel ID',
+      'new_personnel_id': 'New Personnel ID',
+      'replacement_reason': 'Replacement Reason',
+      'replaced_at': 'Replaced At',
+      'personnel_name': 'Personnel',
+      'beat_name': 'Beat',
+      'old_personnel_name': 'Old Personnel',
+      'new_personnel_name': 'New Personnel'
     }
 
     const relevantFields = Object.keys(data).filter(field => 
       data[field] !== undefined && 
       data[field] !== null && 
-      !['id', 'password', 'created_at', 'updated_at', 'created_by'].includes(field)
+      !['id', 'password', 'created_at', 'updated_at', 'created_by', 'personnel_id', 'beat_id', 'old_personnel_id', 'new_personnel_id'].includes(field)
     )
 
     if (relevantFields.length === 0) return <span className="text-gray-500 italic">No relevant data to display</span>
@@ -276,6 +294,14 @@ export function AuditLogsViewer() {
         {relevantFields.map(field => {
           const label = fieldLabels[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
           let value = data[field]
+          
+          // Handle UUID fields - show them as they are since we can't easily resolve them in the client
+          if (typeof value === 'string' && value.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+            // For personnel and beat IDs, show a shortened version
+            if (field.includes('personnel_id') || field.includes('beat_id')) {
+              value = `${value.substring(0, 8)}...`
+            }
+          }
           
           // Handle assigned personnel array
           if (field === 'assigned_personnel' && Array.isArray(value)) {

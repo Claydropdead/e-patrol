@@ -125,19 +125,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to assign personnel to beat' }, { status: 500 })
     }
 
-    // Audit log for personnel assignment
-    await supabase
-      .from('audit_logs')
-      .insert({
-        table_name: 'beat_personnel',
-        operation: 'INSERT',
-        old_data: null,
-        new_data: data,
-        changed_by: user.id,
-        changed_at: new Date().toISOString(),
-        ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-        user_agent: request.headers.get('user-agent') || 'unknown'
-      })
+    // Manual audit logging with user context and readable data
+    try {
+      // Get personnel and beat names for readable audit data
+      const { data: personnel } = await supabaseAuth
+        .from('personnel')
+        .select('full_name, rank')
+        .eq('id', body.personnel_id)
+        .single()
+
+      const { data: beat } = await supabaseAuth
+        .from('beats')
+        .select('name')
+        .eq('id', body.beat_id)
+        .single()
+
+      await supabaseAuth
+        .from('audit_logs')
+        .insert({
+          table_name: 'beat_personnel',
+          operation: 'INSERT',
+          old_data: null,
+          new_data: {
+            ...data,
+            personnel_name: personnel ? `${personnel.rank} ${personnel.full_name}` : 'Unknown Personnel',
+            beat_name: beat?.name || 'Unknown Beat'
+          },
+          changed_by: user.id,
+          changed_at: new Date().toISOString(),
+          ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+          user_agent: request.headers.get('user-agent') || 'unknown',
+          assignment_change: true
+        })
+    } catch (auditError) {
+      console.error('Error logging audit trail:', auditError)
+      // Don't fail the main operation due to audit logging failure
+    }
 
     return NextResponse.json(data)
   } catch (error) {
@@ -209,19 +232,42 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to remove personnel from beat' }, { status: 500 })
     }
 
-    // Audit log for personnel removal
-    await supabase
-      .from('audit_logs')
-      .insert({
-        table_name: 'beat_personnel',
-        operation: 'DELETE',
-        old_data: existingAssignment,
-        new_data: null,
-        changed_by: user.id,
-        changed_at: new Date().toISOString(),
-        ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
-        user_agent: request.headers.get('user-agent') || 'unknown'
-      })
+    // Manual audit logging with user context and readable data
+    try {
+      // Get personnel and beat names for readable audit data
+      const { data: personnel } = await supabaseAuth
+        .from('personnel')
+        .select('full_name, rank')
+        .eq('id', body.personnel_id)
+        .single()
+
+      const { data: beat } = await supabaseAuth
+        .from('beats')
+        .select('name')
+        .eq('id', body.beat_id)
+        .single()
+
+      await supabaseAuth
+        .from('audit_logs')
+        .insert({
+          table_name: 'beat_personnel',
+          operation: 'DELETE',
+          old_data: {
+            ...existingAssignment,
+            personnel_name: personnel ? `${personnel.rank} ${personnel.full_name}` : 'Unknown Personnel',
+            beat_name: beat?.name || 'Unknown Beat'
+          },
+          new_data: null,
+          changed_by: user.id,
+          changed_at: new Date().toISOString(),
+          ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+          user_agent: request.headers.get('user-agent') || 'unknown',
+          assignment_change: true
+        })
+    } catch (auditError) {
+      console.error('Error logging audit trail:', auditError)
+      // Don't fail the main operation due to audit logging failure
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
@@ -319,50 +365,124 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create new personnel assignment' }, { status: 500 })
     }
 
-    // Log the replacement in audit trail
-    await supabase
-      .from('audit_logs')
-      .insert([
-        // Log removal of old personnel
-        {
+    // Log in the dedicated replacement history table with manual audit logging
+    try {
+      // Get personnel names for readable audit data
+      const { data: oldPersonnel } = await supabase
+        .from('personnel')
+        .select('full_name, rank')
+        .eq('id', body.old_personnel_id)
+        .single()
+
+      const { data: newPersonnel } = await supabase
+        .from('personnel')
+        .select('full_name, rank')
+        .eq('id', body.new_personnel_id)
+        .single()
+
+      const { data: beat } = await supabase
+        .from('beats')
+        .select('name')
+        .eq('id', body.beat_id)
+        .single()
+
+      const replacementData = {
+        beat_id: body.beat_id,
+        old_personnel_id: body.old_personnel_id,
+        new_personnel_id: body.new_personnel_id,
+        replacement_reason: body.reason || 'Personnel replacement',
+        replaced_at: new Date().toISOString()
+      }
+
+      await supabase
+        .from('personnel_replacement_history')
+        .insert(replacementData)
+
+      // Manual audit logging for replacement history with readable data
+      await supabaseAuth
+        .from('audit_logs')
+        .insert({
+          table_name: 'personnel_replacement_history',
+          operation: 'INSERT',
+          old_data: null,
+          new_data: {
+            ...replacementData,
+            beat_name: beat?.name || 'Unknown Beat',
+            old_personnel_name: oldPersonnel ? `${oldPersonnel.rank} ${oldPersonnel.full_name}` : 'Unknown Personnel',
+            new_personnel_name: newPersonnel ? `${newPersonnel.rank} ${newPersonnel.full_name}` : 'Unknown Personnel'
+          },
+          changed_by: user.id,
+          changed_at: new Date().toISOString(),
+          ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+          user_agent: request.headers.get('user-agent') || 'unknown',
+          assignment_change: true
+        })
+    } catch (historyError) {
+      console.warn('Could not log to replacement history table:', historyError)
+      // Continue anyway - the main replacement still worked
+    }
+
+    // Manual audit logging for personnel replacement with user context and readable data
+    try {
+      // Get personnel and beat names for readable audit data
+      const { data: oldPersonnel } = await supabaseAuth
+        .from('personnel')
+        .select('full_name, rank')
+        .eq('id', body.old_personnel_id)
+        .single()
+
+      const { data: newPersonnelForAudit } = await supabaseAuth
+        .from('personnel')
+        .select('full_name, rank')
+        .eq('id', body.new_personnel_id)
+        .single()
+
+      const { data: beatForAudit } = await supabaseAuth
+        .from('beats')
+        .select('name')
+        .eq('id', body.beat_id)
+        .single()
+
+      // Log the removal of old personnel
+      await supabaseAuth
+        .from('audit_logs')
+        .insert({
           table_name: 'beat_personnel',
           operation: 'DELETE',
-          old_data: existingAssignment,
+          old_data: {
+            ...existingAssignment,
+            personnel_name: oldPersonnel ? `${oldPersonnel.rank} ${oldPersonnel.full_name}` : 'Unknown Personnel',
+            beat_name: beatForAudit?.name || 'Unknown Beat'
+          },
           new_data: null,
           changed_by: user.id,
           changed_at: new Date().toISOString(),
           ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
           user_agent: request.headers.get('user-agent') || 'unknown',
-          description: `Personnel replacement - removed personnel. Reason: ${body.reason || 'Personnel replacement'}`
-        },
-        // Log assignment of new personnel
-        {
+          assignment_change: true
+        })
+
+      // Log the assignment of new personnel
+      await supabaseAuth
+        .from('audit_logs')
+        .insert({
           table_name: 'beat_personnel',
           operation: 'INSERT',
           old_data: null,
-          new_data: newAssignment,
+          new_data: {
+            ...newAssignment,
+            personnel_name: newPersonnelForAudit ? `${newPersonnelForAudit.rank} ${newPersonnelForAudit.full_name}` : 'Unknown Personnel',
+            beat_name: beatForAudit?.name || 'Unknown Beat'
+          },
           changed_by: user.id,
           changed_at: new Date().toISOString(),
           ip_address: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
           user_agent: request.headers.get('user-agent') || 'unknown',
-          description: `Personnel replacement - assigned new personnel. Reason: ${body.reason || 'Personnel replacement'}`
-        }
-      ])
-
-    // Also try to log in the dedicated replacement history table (if it exists)
-    try {
-      await supabase
-        .from('personnel_replacement_history')
-        .insert({
-          beat_id: body.beat_id,
-          old_personnel_id: body.old_personnel_id,
-          new_personnel_id: body.new_personnel_id,
-          replacement_reason: body.reason || 'Personnel replacement',
-          replaced_at: new Date().toISOString()
+          assignment_change: true
         })
-    } catch (historyError) {
-      console.warn('Could not log to replacement history table (may not exist yet):', historyError)
-      // Continue anyway - the main replacement still worked
+    } catch (auditError) {
+      console.error('Error logging audit trail:', auditError)
+      // Don't fail the main operation due to audit logging failure
     }
 
     return NextResponse.json({
