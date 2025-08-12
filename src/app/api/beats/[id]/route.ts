@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/database/client';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/utils/rate-limit';
 
 // Helper function to validate authentication and get user
@@ -32,7 +32,7 @@ async function validateAuthAndGetUser(request: NextRequest) {
 }
 
 // Helper function to validate user permissions
-async function validateUserPermissions(supabase: any, userId: string, requiredRoles: string[] = ['superadmin']) {
+async function validateUserPermissions(supabase: SupabaseClient, userId: string, requiredRoles: string[] = ['superadmin']) {
   const { data: profile, error } = await supabase
     .from('admin_accounts')
     .select('role')
@@ -51,7 +51,7 @@ async function validateUserPermissions(supabase: any, userId: string, requiredRo
 }
 
 // Input validation helper
-function validateBeatData(data: any): string[] {
+function validateBeatData(data: Record<string, unknown>): string[] {
   const errors: string[] = []
   
   if (data.name && (typeof data.name !== 'string' || data.name.trim().length < 1 || data.name.length > 100)) {
@@ -188,7 +188,7 @@ export async function PUT(
 
     const updateServerSupabase = createServerSupabaseClient()
     
-    const updateData: any = {}
+    const updateData: Record<string, unknown> = {}
     
     // Only update fields that are provided and validated
     if (body.name !== undefined) updateData.name = body.name.trim()

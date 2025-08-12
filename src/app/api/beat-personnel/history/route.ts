@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
       if (record.new_personnel_id) personnelIds.add(record.new_personnel_id)
     })
 
-    let personnelMap = new Map()
+    const personnelMap = new Map()
     if (personnelIds.size > 0) {
       const { data: personnel, error: personnelError } = await supabase
         .from('personnel')
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Transform the data into a readable format
-    const history = (replacementHistory || []).map((record: any) => {
+    const history = (replacementHistory || []).map((record: Record<string, unknown>) => {
       const oldPersonnel = personnelMap.get(record.old_personnel_id)
       const newPersonnel = personnelMap.get(record.new_personnel_id)
       

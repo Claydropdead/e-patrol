@@ -86,7 +86,6 @@ export function ManageUsers() {
   // Direct state management with pagination
   const [usersData, setUsersData] = useState<{ adminUsers: AdminUser[]; personnelUsers: PersonnelUser[] } | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalUsers, setTotalUsers] = useState({ admin: 0, personnel: 0 })
   const ITEMS_PER_PAGE = 50 // Limit items per page
@@ -94,7 +93,6 @@ export function ManageUsers() {
   // Fetch users function with server-side filtering and pagination
   const fetchUsers = useCallback(async (page = 1, search = '', status = 'all') => {
     setLoading(true)
-    setError(null)
     
     try {
       const session = await useAuthStore.getState().getValidSession()
@@ -135,7 +133,6 @@ export function ManageUsers() {
       })
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch users'
-      setError(errorMessage)
       toast.error(errorMessage)
     } finally {
       setLoading(false)
@@ -162,11 +159,11 @@ export function ManageUsers() {
     fetchUsers(currentPage, searchTerm, filterStatus)
   }, [fetchUsers, currentPage, searchTerm, filterStatus])
 
-  // Handle page changes
-  const handlePageChange = useCallback((newPage: number) => {
-    setCurrentPage(newPage)
-    fetchUsers(newPage, searchTerm, filterStatus)
-  }, [fetchUsers, searchTerm, filterStatus])
+  // Handle page changes - currently unused
+  // const handlePageChange = useCallback((newPage: number) => {
+  //   setCurrentPage(newPage)
+  //   fetchUsers(newPage, searchTerm, filterStatus)
+  // }, [fetchUsers, searchTerm, filterStatus])
 
   // Memoized user lists (already filtered by server)
   const adminUsers = useMemo(() => usersData?.adminUsers || [], [usersData?.adminUsers])

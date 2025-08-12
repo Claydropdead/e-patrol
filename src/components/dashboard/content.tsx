@@ -64,7 +64,7 @@ export function DashboardContent({ activeTab }: DashboardContentProps) {
 
   // Live Monitoring Page
   if (activeTab === 'live-monitoring') {
-    return <LiveMonitoring />
+    return <LiveMonitoring key="live-monitoring" />
   }
 
   // Geofencing Page

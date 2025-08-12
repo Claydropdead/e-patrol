@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
 
     // First, let's test if the audit_logs table exists by doing a simple query
     try {
-      const { data: testData, error: testError } = await supabaseAdmin
+      const { error: testError } = await supabaseAdmin
         .from('audit_logs')
         .select('*')
         .limit(1)
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
       }
 
       // If we get here, the table exists
-    } catch (error) {
+    } catch {
       return NextResponse.json(
         { error: 'Failed to access audit_logs table' },
         { status: 500 }

@@ -14,7 +14,6 @@ export function checkRateLimit(
   windowMs: number = 60000 // 1 minute
 ): { allowed: boolean; remainingRequests: number; resetTime: number } {
   const now = Date.now()
-  const windowStart = now - windowMs
   
   // Clean up old entries
   for (const [key, value] of rateLimitStore.entries()) {

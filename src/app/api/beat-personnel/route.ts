@@ -44,13 +44,13 @@ export async function GET() {
     }
 
     // Add assignment type to each personnel record
-    const enrichedData = (beatPersonnelData || []).map((bp: any) => {
+    const enrichedData = (beatPersonnelData || []).map((bp: Record<string, unknown>) => {
       const isReplacement = replacementHistory?.some(
-        (rh: any) => rh.new_personnel_id === bp.personnel_id && rh.beat_id === bp.beat_id
+        (rh: Record<string, unknown>) => rh.new_personnel_id === bp.personnel_id && rh.beat_id === bp.beat_id
       )
       
       const replacementInfo = replacementHistory?.find(
-        (rh: any) => rh.new_personnel_id === bp.personnel_id && rh.beat_id === bp.beat_id
+        (rh: Record<string, unknown>) => rh.new_personnel_id === bp.personnel_id && rh.beat_id === bp.beat_id
       )
 
       return {
@@ -64,7 +64,7 @@ export async function GET() {
     })
 
     return NextResponse.json(enrichedData)
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: 'Failed to fetch beat personnel' }, { status: 500 })
   }
 }
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(data)
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: 'Failed to assign personnel to beat' }, { status: 500 })
   }
 }
@@ -270,7 +270,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true })
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: 'Failed to remove personnel from beat' }, { status: 500 })
   }
 }
@@ -492,7 +492,7 @@ export async function PUT(request: NextRequest) {
       new_assignment: newAssignment,
       replaced_by: profile.full_name
     })
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: 'Failed to replace personnel' }, { status: 500 })
   }
 }

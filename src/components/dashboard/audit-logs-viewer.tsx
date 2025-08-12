@@ -312,11 +312,11 @@ export function AuditLogsViewer() {
                 <div key={field} className="space-y-1">
                   <span className="font-medium text-gray-700">{label}:</span>
                   <div className="ml-4 space-y-1">
-                    {value.map((person: any, index: number) => (
+                    {value.map((person: { full_name?: string; rank?: string; email?: string; acceptance_status?: string }, index: number) => (
                       <div key={index} className="text-sm text-gray-900 bg-gray-50 p-2 rounded">
-                        <div><strong>{person.full_name || 'Unknown'}</strong> ({person.rank || 'N/A'})</div>
-                        {person.email && <div className="text-gray-600">Email: {person.email}</div>}
-                        <div className="text-gray-600">Status: {person.acceptance_status || 'Unknown'}</div>
+                        <div><strong>{String(person.full_name || 'Unknown')}</strong> ({String(person.rank || 'N/A')})</div>
+                        {person.email && <div className="text-gray-600">Email: {String(person.email)}</div>}
+                        <div className="text-gray-600">Status: {String(person.acceptance_status || 'Unknown')}</div>
                       </div>
                     ))}
                   </div>
@@ -390,7 +390,7 @@ export function AuditLogsViewer() {
   // Fetch stats on mount
   useEffect(() => {
     fetchStats()
-  }, [])
+  }, [fetchStats])
 
   if (loading) {
     return (

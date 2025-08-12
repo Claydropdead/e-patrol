@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { 
   Shield, 
   MapPin, 
@@ -16,7 +16,6 @@ import {
   ChevronUp,
   ChevronDown,
   RefreshCw,
-  Filter,
   X,
   AlertCircle,
   Users
@@ -79,26 +78,6 @@ interface GeofenceBeat {
       replaced_at?: string
     } | null
   }[]
-}
-
-interface Violation {
-  id: string
-  beatId: string
-  beatName: string
-  personnelName: string
-  personnelId: string
-  type: 'exit' // Only exit violations - when personnel leave the beat radius
-  timestamp: string
-  location: {
-    lat: number
-    lng: number
-  }
-  status: 'pending' | 'resolved' | 'ignored' | 'acknowledged'
-  distanceFromCenter: number // Required - distance from beat center when violation occurred
-  responseTime?: number
-  resolvedAt?: string
-  acknowledgedAt?: string
-  notificationSent?: boolean
 }
 
 // Helper functions
@@ -270,7 +249,6 @@ export function GeofencingContent() {
   
   // Data states with loading and error handling
   const [beats, setBeats] = useState<GeofenceBeat[]>([])
-  const [violations, setViolations] = useState<Violation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -340,15 +318,15 @@ export function GeofencingContent() {
             .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>)?.full_name as string)
             .filter(Boolean)
           
-          const pendingPersonnel = beatPersonnelData
-            .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id && bp.acceptance_status === 'pending')
-            .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>)?.full_name as string)
-            .filter(Boolean)
+          // const pendingPersonnel = beatPersonnelData
+          //   .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id && bp.acceptance_status === 'pending')
+          //   .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>)?.full_name as string)
+          //   .filter(Boolean)
           
-          const acceptedPersonnel = beatPersonnelData
-            .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id && bp.acceptance_status === 'accepted')
-            .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>)?.full_name as string)
-            .filter(Boolean)
+          // const acceptedPersonnel = beatPersonnelData
+          //   .filter((bp: Record<string, unknown>) => bp.beat_id === beat.id && bp.acceptance_status === 'accepted')
+          //   .map((bp: Record<string, unknown>) => (bp.personnel as Record<string, unknown>)?.full_name as string)
+          //   .filter(Boolean)
           
           return {
             id: beat.id as string,
@@ -394,7 +372,7 @@ export function GeofencingContent() {
                   return null
                 }
               })
-              .filter((detail: any) => {
+              .filter((detail: Record<string, unknown> | null) => {
                 if (!detail || !detail.id || !detail.name || detail.name === 'Unknown') {
                   return false
                 }
@@ -430,7 +408,7 @@ export function GeofencingContent() {
       })
       
       setBeats(transformedBeats)
-      setViolations([]) // TODO: implement violations from database
+      // TODO: implement violations from database
       setLastRefresh(new Date())
       
     } catch (err) {
@@ -875,7 +853,6 @@ export function GeofencingContent() {
                                 }}
                                 onView={() => setSelectedBeat(beat)}
                                 onDelete={handleDeleteBeat}
-                                onRefresh={handleRefresh}
                               />
                             ))}
                           </tbody>
@@ -1006,14 +983,12 @@ function BeatTableRow({
   beat, 
   onEdit, 
   onView,
-  onDelete,
-  onRefresh 
+  onDelete 
 }: { 
   beat: GeofenceBeat
   onEdit: () => void
   onView: () => void
   onDelete: (beatId: string, beatName: string) => void
-  onRefresh?: () => void
 }) {
   
   return (
@@ -1272,12 +1247,12 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
   const availableSubUnits = formData.unit ? MIMAROPA_STRUCTURE[formData.unit as keyof typeof MIMAROPA_STRUCTURE]?.subUnits || [] : []
 
   // Filter personnel based on selected unit and subunit
-  const filteredPersonnel = personnelData.filter(person => {
-    if (!formData.unit) return false
-    if (person.unit !== formData.unit) return false
-    if (formData.subUnit && person.subUnit !== formData.subUnit) return false
-    return true
-  })
+  //   const filteredPersonnel = personnelData.filter(person => { // Commented out unused variable
+  //   if (!formData.unit) return false
+  //   if (person.unit !== formData.unit) return false
+  //   if (formData.subUnit && person.subUnit !== formData.subUnit) return false
+  //   return true
+  // })
 
   // Reset subUnit and personnel when unit changes
   const handleUnitChange = (value: string) => {
@@ -1449,7 +1424,10 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
               <div className="text-sm text-gray-500 text-center py-4 bg-gray-50 rounded-lg">
                 Please select a unit first to see available personnel
               </div>
-            ) : filteredPersonnel.length === 0 ? (
+            ) : personnelData.filter(person => 
+              formData.unit && person.unit === formData.unit && 
+              (!formData.subUnit || person.subUnit === formData.subUnit)
+            ).length === 0 ? (
               <div className="text-sm text-gray-500 text-center py-4 bg-gray-50 rounded-lg">
                 No personnel available for the selected unit/sub-unit
               </div>
@@ -1461,7 +1439,10 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
                   {formData.subUnit && <span> - <strong>{formData.subUnit}</strong></span>}
                 </div>
                 <div className="border rounded-lg p-4 max-h-48 overflow-y-auto">
-                  {filteredPersonnel.map(person => (
+                  {personnelData.filter(person => 
+                    formData.unit && person.unit === formData.unit && 
+                    (!formData.subUnit || person.subUnit === formData.subUnit)
+                  ).map((person: { id: string; name: string; rank: string; unit: string; subUnit: string }) => (
                     <div key={person.id} className="flex items-center space-x-3 py-2">
                       <input
                         type="checkbox"
@@ -1731,15 +1712,25 @@ function EditBeatDialog({
   
   // Replacement functionality state
   const [showReplacementDialog, setShowReplacementDialog] = useState(false)
-  const [personnelToReplace, setPersonnelToReplace] = useState<any>(null)
-  const [availablePersonnel, setAvailablePersonnel] = useState<any[]>([])
+  const [personnelToReplace, setPersonnelToReplace] = useState<{ id: string; name: string; rank: string } | null>(null)
+  const [availablePersonnel, setAvailablePersonnel] = useState<Array<{ id: string; name: string; rank: string; full_name: string; email: string }>>([])
   const [selectedReplacement, setSelectedReplacement] = useState<string>('')
   const [replacementReason, setReplacementReason] = useState<string>('')
   const [isReplacing, setIsReplacing] = useState(false)
   
   // Replacement history state
   const [showReplacementHistory, setShowReplacementHistory] = useState(false)
-  const [replacementHistory, setReplacementHistory] = useState<any[]>([])
+  const [replacementHistory, setReplacementHistory] = useState<Array<{ 
+    id: string; 
+    action: string; 
+    date: string; 
+    type?: string; 
+    timestamp?: string; 
+    reason?: string;
+    oldPersonnel?: { name: string };
+    newPersonnel?: { name: string };
+    personnel?: { name: string } | string;
+  }>>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
 
   // Fetch personnel data for assignment
@@ -1780,15 +1771,15 @@ function EditBeatDialog({
     }
 
     fetchPersonnel()
-  }, [])
+  }, [formData.unit, formData.subUnit])
 
   // Handle personnel replacement
-  const handleReplacementClick = (personnel: any) => {
-    setPersonnelToReplace(personnel)
-    // Fetch available personnel for replacement
-    fetchAvailablePersonnel()
-    setShowReplacementDialog(true)
-  }
+  // const handleReplacementClick = (personnel: Record<string, unknown>) => {
+  //   setPersonnelToReplace(personnel)
+  //   // Fetch available personnel for replacement
+  //   fetchAvailablePersonnel()
+  //   setShowReplacementDialog(true)
+  // }
 
   const handleRemovePersonnel = async (personnelId: string) => {
     try {
@@ -1817,7 +1808,7 @@ function EditBeatDialog({
         let errorData
         try {
           errorData = await response.json()
-        } catch (parseError) {
+        } catch {
           errorData = { error: `HTTP ${response.status}: ${response.statusText}` }
         }
         console.error('Delete response error:', errorData)
@@ -1968,9 +1959,12 @@ function EditBeatDialog({
         if (response.status === 403) {
           // User doesn't have sufficient privileges
           setReplacementHistory([{
+            id: 'notice',
+            action: 'notice',
+            date: new Date().toISOString(),
             type: 'info',
             timestamp: new Date().toISOString(),
-            personnel: { name: 'System Notice', email: '' },
+            personnel: { name: 'System Notice' },
             reason: 'Replacement history is only available to authorized personnel. Contact your administrator for access.'
           }])
           return
@@ -1987,9 +1981,12 @@ function EditBeatDialog({
       console.error('Error fetching replacement history:', error)
       // Provide a user-friendly fallback message
       setReplacementHistory([{
+        id: 'error',
+        action: 'error',
+        date: new Date().toISOString(),
         type: 'error',
         timestamp: new Date().toISOString(),
-        personnel: { name: 'System Notice', email: '' },
+        personnel: { name: 'System Notice' },
         reason: 'Unable to load replacement history. Please ensure the database is properly configured and you have the necessary permissions.'
       }])
     } finally {
@@ -1997,94 +1994,7 @@ function EditBeatDialog({
     }
   }
 
-  const processAuditLogsForHistory = async (auditLogs: any[], session: any) => {
-    // Group logs by timestamp and create replacement events
-    const events: any[] = []
-    
-    // Get all personnel IDs from the logs to fetch their names
-    const personnelIds = new Set<string>()
-    
-    for (const log of auditLogs) {
-      if (log.old_data?.personnel_id) {
-        personnelIds.add(log.old_data.personnel_id)
-      }
-      if (log.new_data?.personnel_id) {
-        personnelIds.add(log.new_data.personnel_id)
-      }
-    }
-    
-    // Fetch personnel names
-    const personnelNames: Record<string, string> = {}
-    if (personnelIds.size > 0) {
-      try {
-        const response = await fetch(`/api/personnel/list?ids=${Array.from(personnelIds).join(',')}`, {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`
-          }
-        })
-        
-        if (response.ok) {
-          const data = await response.json()
-          for (const person of data.data || []) {
-            personnelNames[person.id] = `${person.rank} ${person.full_name}`
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching personnel names for history:', error)
-      }
-    }
-    
-    for (let i = 0; i < auditLogs.length; i++) {
-      const log = auditLogs[i]
-      
-      if (log.operation === 'DELETE' && log.old_data) {
-        // Look for a corresponding INSERT within a few seconds
-        const insertLog = auditLogs.find((l, idx) => 
-          idx > i && 
-          l.operation === 'INSERT' && 
-          Math.abs(new Date(l.changed_at).getTime() - new Date(log.changed_at).getTime()) < 10000 // 10 seconds
-        )
-        
-        if (insertLog) {
-          events.push({
-            type: 'replacement',
-            timestamp: log.changed_at,
-            oldPersonnel: personnelNames[log.old_data?.personnel_id] || log.old_data?.personnel_id || 'Unknown',
-            newPersonnel: personnelNames[insertLog.new_data?.personnel_id] || insertLog.new_data?.personnel_id || 'Unknown',
-            changedBy: log.changed_by_name || log.changed_by || 'System',
-            reason: 'Personnel replacement'
-          })
-        } else {
-          events.push({
-            type: 'removal',
-            timestamp: log.changed_at,
-            personnel: personnelNames[log.old_data?.personnel_id] || log.old_data?.personnel_id || 'Unknown',
-            changedBy: log.changed_by_name || log.changed_by || 'System',
-            reason: 'Personnel removed'
-          })
-        }
-      } else if (log.operation === 'INSERT' && log.new_data) {
-        // Check if this isn't part of a replacement
-        const deleteLog = auditLogs.find((l, idx) => 
-          idx < i && 
-          l.operation === 'DELETE' && 
-          Math.abs(new Date(l.changed_at).getTime() - new Date(log.changed_at).getTime()) < 10000 // 10 seconds
-        )
-        
-        if (!deleteLog) {
-          events.push({
-            type: 'assignment',
-            timestamp: log.changed_at,
-            personnel: personnelNames[log.new_data?.personnel_id] || log.new_data?.personnel_id || 'Unknown',
-            changedBy: log.changed_by_name || log.changed_by || 'System',
-            reason: 'Personnel assigned'
-          })
-        }
-      }
-    }
-    
-    return events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-  }
+  // Removed processAuditLogsForHistory function - was unused
 
   // Handle form submission
   const handleSubmit = async () => {
@@ -2169,56 +2079,20 @@ function EditBeatDialog({
     }
   }
 
-  // Fetch personnel data from API for beat assignment
-  const [personnelData, setPersonnelData] = useState<Array<{id: string, name: string, rank: string, unit: string, subUnit: string}>>([])
+  // Personnel data fetch removed as it was unused
   
-  React.useEffect(() => {
-    const fetchPersonnel = async () => {
-      try {
-        const session = await useAuthStore.getState().getValidSession()
-        if (!session) {
-          console.error('No valid session for fetching personnel')
-          return
-        }
-
-        const response = await fetch('/api/personnel/list', {
-          headers: { 
-            'Authorization': `Bearer ${session.access_token}` 
-          }
-        })
-        if (response.ok) {
-          const data = await response.json()
-          const personnel = data.data
-            .map((user: Record<string, unknown>) => ({
-              id: user.id as string,
-              name: user.full_name as string,
-              rank: user.rank as string,
-              unit: user.unit as string,
-              subUnit: user.sub_unit as string
-            }))
-          setPersonnelData(personnel)
-        } else {
-          console.error('Failed to fetch personnel:', response.status, response.statusText)
-        }
-      } catch (error) {
-        console.error('Failed to fetch personnel:', error)
-      }
-    }
-    fetchPersonnel()
-  }, [])
-
   const units = Object.keys(MIMAROPA_STRUCTURE) // Main units (provinces)
   
   // Get available sub-units based on selected unit
   const availableSubUnits = formData.unit ? MIMAROPA_STRUCTURE[formData.unit as keyof typeof MIMAROPA_STRUCTURE]?.subUnits || [] : []
 
   // Filter personnel based on selected unit and subunit
-  const filteredPersonnel = personnelData.filter(person => {
-    if (!formData.unit) return false
-    if (person.unit !== formData.unit) return false
-    if (formData.subUnit && person.subUnit !== formData.subUnit) return false
-    return true
-  })
+  //   const filteredPersonnel = personnelData.filter(person => { // Commented out unused variable
+  //   if (!formData.unit) return false
+  //   if (person.unit !== formData.unit) return false
+  //   if (formData.subUnit && person.subUnit !== formData.subUnit) return false
+  //   return true
+  // })
 
   // Reset subUnit and personnel when unit changes
   const handleUnitChange = (value: string) => {
@@ -2591,7 +2465,7 @@ function EditBeatDialog({
                           ))
                         ) : (
                           <div className="p-3 text-sm text-gray-500 text-center">
-                            No personnel found matching "{searchQuery}"
+                            No personnel found matching &quot;{searchQuery}&quot;
                           </div>
                         )
                       })()}
@@ -2755,7 +2629,7 @@ function EditBeatDialog({
                                event.type === 'removal' ? 'Removal' : 'Assignment'}
                             </Badge>
                             <span className="text-sm text-gray-500">
-                              {new Date(event.timestamp).toLocaleString()}
+                              {event.timestamp ? new Date(event.timestamp).toLocaleString() : 'Unknown date'}
                             </span>
                           </div>
                           
@@ -2766,9 +2640,9 @@ function EditBeatDialog({
                                 <p><span className="font-medium">With:</span> {event.newPersonnel?.name || 'Unknown'}</p>
                               </>
                             ) : event.type === 'removal' ? (
-                              <p><span className="font-medium">Removed:</span> {event.personnel?.name || event.personnel || 'Unknown'}</p>
+                              <p><span className="font-medium">Removed:</span> {typeof event.personnel === 'object' ? event.personnel?.name : event.personnel || 'Unknown'}</p>
                             ) : (
-                              <p><span className="font-medium">Assigned:</span> {event.personnel?.name || event.personnel || 'Unknown'}</p>
+                              <p><span className="font-medium">Assigned:</span> {typeof event.personnel === 'object' ? event.personnel?.name : event.personnel || 'Unknown'}</p>
                             )}
                             <p><span className="font-medium">Reason:</span> {event.reason || 'No reason provided'}</p>
                           </div>
