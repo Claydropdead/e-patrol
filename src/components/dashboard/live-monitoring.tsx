@@ -14,7 +14,8 @@ import {
   Filter,
   Search,
   RefreshCw,
-  Loader2
+  Loader2,
+  Navigation
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -40,6 +41,9 @@ function MiniMap({ personnel, beats, onMapReady }: {
 
     const initMap = async () => {
       try {
+        // Small delay to ensure DOM is ready
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
         const L = (await import('leaflet')).default
 
         // Fix for default markers
@@ -52,7 +56,11 @@ function MiniMap({ personnel, beats, onMapReady }: {
 
         // Check if container exists and is not already initialized
         const mapContainer = document.getElementById('mini-map')
-        if (!mapContainer) return
+        if (!mapContainer || mapContainer.offsetWidth === 0 || mapContainer.offsetHeight === 0) {
+          console.warn('Map container not ready, retrying...')
+          setTimeout(initMap, 100)
+          return
+        }
 
         // Clear any existing content
         mapContainer.innerHTML = ''
@@ -183,7 +191,13 @@ function MiniMap({ personnel, beats, onMapReady }: {
                   
                   // Invalidate map size to refresh
                   setTimeout(() => {
-                    map.invalidateSize()
+                    if (newMap && newMap.getContainer()) {
+                      try {
+                        newMap.invalidateSize()
+                      } catch (error) {
+                        console.error('Error invalidating map size:', error)
+                      }
+                    }
                   }, 100)
                 }).catch(err => {
                   console.error('Error entering fullscreen:', err)
@@ -202,7 +216,13 @@ function MiniMap({ personnel, beats, onMapReady }: {
                   
                   // Invalidate map size to refresh
                   setTimeout(() => {
-                    map.invalidateSize()
+                    if (newMap && newMap.getContainer()) {
+                      try {
+                        newMap.invalidateSize()
+                      } catch (error) {
+                        console.error('Error invalidating map size:', error)
+                      }
+                    }
                   }, 100)
                 }).catch(err => {
                   console.error('Error exiting fullscreen:', err)
@@ -236,7 +256,13 @@ function MiniMap({ personnel, beats, onMapReady }: {
             
             // Invalidate map size to refresh
             setTimeout(() => {
-              newMap.invalidateSize()
+              if (newMap && newMap.getContainer()) {
+                try {
+                  newMap.invalidateSize()
+                } catch (error) {
+                  console.error('Error invalidating map size:', error)
+                }
+              }
             }, 100)
           }
         })
@@ -259,6 +285,17 @@ function MiniMap({ personnel, beats, onMapReady }: {
 
         mapRef.current = newMap
         console.log('🗺️ Mini map initialized successfully')
+
+        // Ensure map size is correct after initialization
+        setTimeout(() => {
+          try {
+            if (newMap && newMap.getContainer() && newMap.getContainer().offsetWidth > 0) {
+              newMap.invalidateSize()
+            }
+          } catch (e) {
+            console.error('Error calling invalidateSize:', e)
+          }
+        }, 300) // Increased delay to ensure DOM is fully ready
 
         // Notify parent component that map is ready
         if (onMapReady) {
@@ -481,7 +518,15 @@ function MiniMap({ personnel, beats, onMapReady }: {
                 <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Status:</strong> ${statusBadge}</p>
                 <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Unit:</strong> ${person.unit} - ${person.sub_unit}</p>
                 ${beatInfo}
-                <p style="margin: 0; font-size: 12px; color: #9ca3af;">Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}</p>
+                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb;">
+                  <p style="margin: 0 0 2px 0; font-size: 12px; color: #9ca3af;">📍 ${lat.toFixed(6)}, ${lng.toFixed(6)}</p>
+                  ${person.accuracy !== null ? 
+                    `<p style="margin: 0; font-size: 12px; color: ${person.accuracy <= 10 ? '#059669' : person.accuracy <= 50 ? '#d97706' : '#dc2626'};">
+                      🎯 Accuracy: ±${person.accuracy.toFixed(1)}m ${person.accuracy <= 10 ? '(Good)' : person.accuracy <= 50 ? '(Fair)' : '(Poor)'}
+                    </p>` : 
+                    '<p style="margin: 0; font-size: 12px; color: #9ca3af;">🎯 Accuracy: Unknown</p>'
+                  }
+                </div>
               </div>
             `
 
@@ -527,6 +572,7 @@ interface PersonnelData {
   status_notes: string | null
   latitude: number | null
   longitude: number | null
+  accuracy: number | null // GPS accuracy in meters
   last_update: string | null
   minutes_since_update: number | null
   is_online: boolean
@@ -560,6 +606,9 @@ export function LiveMonitoring() {
   const [subUnitFilter, setSubUnitFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [lastUpdate, setLastUpdate] = useState(new Date())
+  const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number, accuracy: number} | null>(null)
+  const [gettingLocation, setGettingLocation] = useState(false)
+  const [locationError, setLocationError] = useState<string | null>(null)
   const mapInstance = useRef<L.Map | null>(null)
 
   // Function to focus map on specific personnel location
@@ -591,19 +640,19 @@ export function LiveMonitoring() {
     try {
       setError(null)
       
-      // Fetch personnel status, locations, beat assignments, and all beats
-      const [statusResponse, locationsResponse, beatPersonnelResponse, beatsResponse] = await Promise.all([
-        fetch('/api/personnel/status'),
+      // Fetch personnel, locations, beat assignments, and all beats
+      const [personnelResponse, locationsResponse, beatPersonnelResponse, beatsResponse] = await Promise.all([
+        fetch('/api/personnel'),
         fetch('/api/personnel/locations'),
         fetch('/api/beat-personnel'),
         fetch('/api/beats')
       ])
       
-      if (!statusResponse.ok || !locationsResponse.ok || !beatPersonnelResponse.ok || !beatsResponse.ok) {
+      if (!personnelResponse.ok || !locationsResponse.ok || !beatPersonnelResponse.ok || !beatsResponse.ok) {
         throw new Error('Failed to fetch personnel data')
       }
       
-      const statusData = await statusResponse.json()
+      const personnelData = await personnelResponse.json()
       const locationData = await locationsResponse.json()
       const beatPersonnelData = await beatPersonnelResponse.json()
       const beatsData = await beatsResponse.json()
@@ -611,30 +660,33 @@ export function LiveMonitoring() {
       // Store beats data for map display
       setBeats(beatsData)
       
-      // Combine status, location, and beat assignment data
-      const combinedData: PersonnelData[] = statusData.map((status: Record<string, unknown>) => {
-        const location = locationData.find((loc: Record<string, unknown>) => loc.personnel_id === status.personnel_id)
-        const beatAssignment = beatPersonnelData.find((bp: Record<string, unknown>) => bp.personnel_id === status.personnel_id)
-        const personnel = status.personnel as Record<string, unknown>
+      // Combine personnel, location, and beat assignment data
+      const combinedData: PersonnelData[] = personnelData.map((person: Record<string, unknown>) => {
+        const location = locationData.find((loc: Record<string, unknown>) => loc.personnel_id === person.id)
+        const beatAssignment = beatPersonnelData.find((bp: Record<string, unknown>) => bp.personnel_id === person.id)
         
         return {
-          id: personnel.id as string,
-          full_name: personnel.full_name as string,
-          rank: personnel.rank as string,
-          email: (personnel.email as string) || `${(personnel.full_name as string).toLowerCase().replace(/\s+/g, '.')}@pnp.gov.ph`,
-          province: (personnel.unit as string)?.includes('PPO') ? (personnel.unit as string).replace(' PPO', '') : 'MIMAROPA',
-          unit: personnel.unit as string,
-          sub_unit: personnel.sub_unit as string,
-          status: status.status as string,
-          status_changed_at: status.status_changed_at as string,
-          status_notes: status.status_notes as string,
+          id: person.id as string,
+          full_name: person.full_name as string,
+          rank: person.rank as string,
+          email: (person.email as string) || `${(person.full_name as string).toLowerCase().replace(/\s+/g, '.')}@pnp.gov.ph`,
+          province: (person.unit as string)?.includes('PPO') ? (person.unit as string).replace(' PPO', '') : 'MIMAROPA',
+          unit: person.unit as string,
+          sub_unit: person.sub_unit as string,
+          // Frontend-managed status: default to 'on_duty' if they have recent location, otherwise 'standby'
+          status: location?.latitude && location?.longitude && location?.updated_at && 
+            (Date.now() - new Date(location.updated_at as string).getTime()) < 15 * 60 * 1000 ? 'on_duty' : 'standby',
+          status_changed_at: location?.updated_at || null,
+          status_notes: location?.latitude && location?.longitude ? 'Active GPS tracking' : 'No GPS data',
           latitude: (location?.latitude as number) || null,
           longitude: (location?.longitude as number) || null,
+          accuracy: (location?.accuracy as number) || null,
           last_update: (location?.updated_at as string) || null,
           minutes_since_update: location?.updated_at ? 
             Math.floor((Date.now() - new Date(location.updated_at as string).getTime()) / (1000 * 60)) : null,
-          is_online: !!location && location.updated_at && 
-            (Date.now() - new Date(location.updated_at as string).getTime()) < 15 * 60 * 1000, // 15 minutes
+          // STRICT: Only online if has actual GPS coordinates AND recent timestamp
+          is_online: !!(location?.latitude && location?.longitude && location?.updated_at && 
+            (Date.now() - new Date(location.updated_at as string).getTime()) < 15 * 60 * 1000), // 15 minutes
           // Beat information from beat assignment
           beat_name: (beatAssignment as Record<string, unknown>)?.beats ? 
             ((beatAssignment as Record<string, unknown>).beats as Record<string, unknown>).name as string : null,
@@ -662,26 +714,27 @@ export function LiveMonitoring() {
     fetchPersonnelData()
   }, [])
 
-  // Simulate real-time updates
+  // Update time calculations more frequently for real-time accuracy
   useEffect(() => {
     const interval = setInterval(() => {
       setPersonnel(prev => prev.map(person => ({
         ...person,
         minutes_since_update: person.last_update ? 
           Math.floor((Date.now() - new Date(person.last_update).getTime()) / (1000 * 60)) : null,
-        is_online: person.last_update ? 
+        // Only set online if there's actual location data AND it's recent
+        is_online: person.last_update && person.latitude && person.longitude ? 
           (Date.now() - new Date(person.last_update).getTime()) < 15 * 60 * 1000 : false
       })))
-    }, 60000) // Update every minute
+    }, 10000) // Update every 10 seconds for more accurate time display
 
     return () => clearInterval(interval)
   }, [])
 
-  // Auto-refresh data every 30 seconds
+  // Auto-refresh data every 5 seconds for real-time updates
   useEffect(() => {
     const interval = setInterval(() => {
       fetchPersonnelData()
-    }, 30000)
+    }, 5000) // Update every 5 seconds
 
     return () => clearInterval(interval)
   }, [])
@@ -694,10 +747,14 @@ export function LiveMonitoring() {
     onDuty: personnel.filter(p => p.status === 'on_duty').length
   }
 
-  // Filter personnel based on current filters
+  // Filter personnel - Only show those with active GPS location (online)
   const filteredPersonnel = personnel.filter(person => {
     if (!person || !person.id || !person.full_name) return false
     
+    // FIRST: Must be online (have recent GPS location data)
+    if (!person.is_online) return false
+    
+    // THEN: Apply other filters
     const matchesStatus = statusFilter === 'all' || person.status === statusFilter
     const matchesUnit = unitFilter === 'all' || person.unit === unitFilter
     const matchesSubUnit = subUnitFilter === 'all' || person.sub_unit === subUnitFilter
@@ -914,8 +971,8 @@ export function LiveMonitoring() {
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center">
                   <Users className="h-5 w-5 mr-2" />
-                  Personnel Live Location Tracking
-                  <span className="ml-2 text-xs text-gray-500 font-normal">(Click on-duty cards to focus map)</span>
+                  Online Personnel
+                  <span className="ml-2 text-xs text-gray-500 font-normal">(Active GPS location sharing)</span>
                 </CardTitle>
                 <div className="flex items-center space-x-2">
                   <span className="text-xs text-gray-500">
@@ -1048,7 +1105,8 @@ export function LiveMonitoring() {
                 ) : filteredPersonnel.length === 0 ? (
                   <div className="p-6 text-center text-gray-500">
                     <Users className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                    <p>No personnel found</p>
+                    <p className="font-medium">No online personnel</p>
+                    <p className="text-xs text-gray-400 mt-1">No personnel are currently sharing GPS location</p>
                   </div>
                 ) : (
                   <div className="space-y-2 p-4">
@@ -1070,7 +1128,10 @@ export function LiveMonitoring() {
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-3">
-                              <div className={`w-3 h-3 rounded-full ${statusConfig.color}`}></div>
+                              {/* Dot color based on LOCATION STATUS, not duty status */}
+                              <div className={`w-3 h-3 rounded-full ${
+                                person.is_online ? 'bg-green-500' : 'bg-gray-400'
+                              }`}></div>
                               <div>
                                 <p className="font-medium text-gray-900 text-sm">{person.full_name}</p>
                                 <p className="text-xs text-gray-600">{person.rank}</p>
@@ -1113,6 +1174,19 @@ export function LiveMonitoring() {
                                 </Badge>
                               </div>
                             </div>
+                            {person.is_online && person.accuracy !== null && (
+                              <div className="mt-1 text-xs">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                                  person.accuracy <= 10 
+                                    ? 'bg-green-100 text-green-700' 
+                                    : person.accuracy <= 50 
+                                    ? 'bg-yellow-100 text-yellow-700' 
+                                    : 'bg-red-100 text-red-700'
+                                }`}>
+                                  🎯 ±{person.accuracy.toFixed(1)}m
+                                </span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       )
