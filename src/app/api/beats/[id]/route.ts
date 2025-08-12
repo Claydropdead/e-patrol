@@ -199,9 +199,6 @@ export async function PUT(
     if (body.unit !== undefined) updateData.unit = body.unit.trim()
     if (body.sub_unit !== undefined) updateData.sub_unit = body.sub_unit.trim()
     if (body.status !== undefined) updateData.status = body.status
-    
-    // Always update the updated_at timestamp
-    updateData.updated_at = new Date().toISOString()
 
     // Get original data for audit logging
     const { data: originalBeat } = await updateServerSupabase

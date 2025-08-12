@@ -972,23 +972,30 @@ export function GeofencingContent() {
 
       {/* Edit Beat Dialog */}
       {isEditBeatOpen && beatToEdit && (
-        <EditBeatDialog 
-          beat={beatToEdit}
-          onClose={() => {
-            setIsEditBeatOpen(false)
-            setBeatToEdit(null)
-          }}
-          onBeatUpdated={handleRefresh}
-        />
+        <Dialog open={isEditBeatOpen} onOpenChange={() => {
+          setIsEditBeatOpen(false)
+          setBeatToEdit(null)
+        }}>
+          <EditBeatDialog 
+            beat={beatToEdit}
+            onClose={() => {
+              setIsEditBeatOpen(false)
+              setBeatToEdit(null)
+            }}
+            onBeatUpdated={handleRefresh}
+          />
+        </Dialog>
       )}
 
       {/* Beat Details Dialog */}
       {selectedBeat && (
-        <BeatDetailsDialog 
-          beat={selectedBeat!} 
-          onClose={() => setSelectedBeat(null)}
-          onRefresh={handleRefresh}
-        />
+        <Dialog open={!!selectedBeat} onOpenChange={() => setSelectedBeat(null)}>
+          <BeatDetailsDialog 
+            beat={selectedBeat!} 
+            onClose={() => setSelectedBeat(null)}
+            onRefresh={handleRefresh}
+          />
+        </Dialog>
       )}
     </div>
   )
@@ -1292,7 +1299,7 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
   }
 
   return (
-    <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+    <DialogContent className="max-w-4xl max-h-[70vh] flex flex-col">
       <DialogHeader>
         <DialogTitle>Create New Patrol Beat</DialogTitle>
         <DialogDescription>
@@ -1300,7 +1307,7 @@ function CreateBeatDialog({ onClose, onBeatCreated }: { onClose: () => void, onB
         </DialogDescription>
       </DialogHeader>
       
-      <div className="space-y-6">
+      <div className="space-y-6 overflow-y-auto flex-1">
         {/* Basic Information */}
         <div className="space-y-4">
           <h3 className="text-lg font-medium text-gray-900">Basic Information</h3>
@@ -1556,20 +1563,19 @@ function BeatDetailsDialog({
   }
 
   return (
-    <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5" />
-            {beat.name}
-          </DialogTitle>
-          <DialogDescription>{beat.location.address}</DialogDescription>
-        </DialogHeader>
+    <DialogContent className="max-w-4xl max-h-[70vh] flex flex-col">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <Shield className="h-5 w-5" />
+          {beat.name}
+        </DialogTitle>
+        <DialogDescription>{beat.location.address}</DialogDescription>
+      </DialogHeader>
         
-        <div className="space-y-6">
+        <div className="space-y-4 overflow-y-auto flex-1">
           {/* Basic Information */}
           <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-3">Basic Information</h3>
+            <h3 className="text-base font-medium text-gray-900 mb-3">Basic Information</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <Label className="text-sm text-gray-500">Beat Status</Label>
@@ -1593,16 +1599,16 @@ function BeatDetailsDialog({
 
           {/* Location Information */}
           <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-3">Location & Beat Center</h3>
+            <h3 className="text-base font-medium text-gray-900 mb-3">Location & Beat Center</h3>
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
               <div className="flex items-center gap-2 mb-2">
-                <MapPin className="h-5 w-5 text-blue-600" />
-                <Label className="text-sm font-medium text-blue-800">Beat Center Coordinates</Label>
+                <MapPin className="h-4 w-4 text-blue-600" />
+                <Label className="text-xs font-medium text-blue-800">Beat Center Coordinates</Label>
               </div>
-              <p className="font-mono text-lg font-bold text-blue-900 mb-1">
+              <p className="font-mono text-sm font-medium text-blue-900 mb-1 break-all">
                 📍 {beat.location.lat.toFixed(6)}, {beat.location.lng.toFixed(6)}
               </p>
-              <p className="text-sm text-blue-700">
+              <p className="text-xs text-blue-700">
                 Beat radius: <strong>{beat.radius}m</strong> from this center point
               </p>
             </div>
@@ -1625,7 +1631,7 @@ function BeatDetailsDialog({
           {/* Duty Schedule */}
           {beat.dutyStartTime && (
             <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-3">Duty Schedule</h3>
+              <h3 className="text-base font-medium text-gray-900 mb-3">Duty Schedule</h3>
               <div className="bg-blue-50 rounded-lg p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -1647,7 +1653,7 @@ function BeatDetailsDialog({
           
           {/* Personnel */}
           <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-3">Assigned Personnel</h3>
+            <h3 className="text-base font-medium text-gray-900 mb-3">Assigned Personnel</h3>
             <div className="space-y-3">
               {beat.assignedPersonnelDetails?.map((person, index) => (
                 <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
@@ -1679,17 +1685,16 @@ function BeatDetailsDialog({
           </div>
         </div>
         
-        <div className="flex justify-end space-x-2 pt-4 border-t">
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-          <Button onClick={() => setIsEditMode(true)}>
-            <Edit className="h-4 w-4 mr-2" />
-            Edit Beat
-          </Button>
-        </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          Close
+        </Button>
+        <Button onClick={() => setIsEditMode(true)}>
+          <Edit className="h-4 w-4 mr-2" />
+          Edit Beat
+        </Button>
+      </DialogFooter>
       </DialogContent>
-    </Dialog>
   )
 }
 
@@ -1718,6 +1723,12 @@ function EditBeatDialog({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   
+  // Search query for personnel search
+  const [searchQuery, setSearchQuery] = useState('')
+  
+  // Personnel data for assignment
+  const [editPersonnelData, setEditPersonnelData] = useState<Array<{id: string, name: string, rank: string, unit: string, subUnit: string}>>([])
+  
   // Replacement functionality state
   const [showReplacementDialog, setShowReplacementDialog] = useState(false)
   const [personnelToReplace, setPersonnelToReplace] = useState<any>(null)
@@ -1730,6 +1741,46 @@ function EditBeatDialog({
   const [showReplacementHistory, setShowReplacementHistory] = useState(false)
   const [replacementHistory, setReplacementHistory] = useState<any[]>([])
   const [loadingHistory, setLoadingHistory] = useState(false)
+
+  // Fetch personnel data for assignment
+  React.useEffect(() => {
+    const fetchPersonnel = async () => {
+      try {
+        const session = await useAuthStore.getState().getValidSession()
+        if (!session) {
+          console.error('No valid session for fetching personnel')
+          return
+        }
+
+        console.log('Fetching personnel data for edit beat...')
+        const response = await fetch('/api/personnel/list', {
+          headers: { 
+            'Authorization': `Bearer ${session.access_token}` 
+          }
+        })
+        if (response.ok) {
+          const data = await response.json()
+          const personnel = data.data
+            .map((user: Record<string, unknown>) => ({
+              id: user.id as string,
+              name: user.full_name as string,
+              rank: user.rank as string,
+              unit: user.unit as string,
+              subUnit: user.sub_unit as string
+            }))
+          console.log('Personnel data fetched:', personnel)
+          console.log('Beat unit/subUnit:', formData.unit, formData.subUnit)
+          setEditPersonnelData(personnel)
+        } else {
+          console.error('Failed to fetch personnel:', response.status, response.statusText)
+        }
+      } catch (error) {
+        console.error('Error fetching personnel:', error)
+      }
+    }
+
+    fetchPersonnel()
+  }, [])
 
   // Handle personnel replacement
   const handleReplacementClick = (personnel: any) => {
@@ -2073,6 +2124,41 @@ function EditBeatDialog({
         throw new Error('Failed to update beat')
       }
 
+      const updatedBeat = await beatResponse.json()
+
+      // Assign new personnel if any are selected
+      if (formData.selectedPersonnel.length > 0) {
+        if (!session) {
+          throw new Error('Authentication required for personnel assignment')
+        }
+
+        const assignmentPromises = formData.selectedPersonnel.map(async (personnelId) => {
+          const assignResponse = await fetch('/api/beat-personnel', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({
+              beat_id: updatedBeat.id,
+              personnel_id: personnelId,
+              status: 'pending'
+            })
+          })
+          
+          if (!assignResponse.ok) {
+            console.error(`Failed to assign personnel ${personnelId} to beat`)
+          }
+        })
+
+        try {
+          await Promise.all(assignmentPromises)
+          console.log(`Assigned ${formData.selectedPersonnel.length} personnel to beat ${updatedBeat.id}`)
+        } catch (assignError) {
+          console.error('Some personnel assignments failed:', assignError)
+        }
+      }
+
       toast.success('Beat updated successfully')
       onBeatUpdated?.()
       onClose()
@@ -2154,21 +2240,21 @@ function EditBeatDialog({
   }
 
   return (
-    <Dialog open={true} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+    <>
+      <DialogContent className="max-w-4xl max-h-[70vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Edit className="h-5 w-5" />
-            Edit Beat: {beat.name}
-          </DialogTitle>
-          <DialogDescription>
-            Update the beat information, location, and settings.
-          </DialogDescription>
-        </DialogHeader>
+          Edit Beat: {beat.name}
+        </DialogTitle>
+        <DialogDescription>
+          Update the beat information, location, and settings.
+        </DialogDescription>
+      </DialogHeader>
         
-        <div className="space-y-6">
+        <div className="space-y-4 overflow-y-auto flex-1">
           {/* Basic Information */}
-          <div className="space-y-4">
+          <div className="space-y-3">
             <h3 className="text-lg font-medium text-gray-900">Basic Information</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -2319,72 +2405,216 @@ function EditBeatDialog({
             </div>
             <div className="bg-gray-50 rounded-lg p-4">
               <div className="space-y-2">
-                {beat.assignedPersonnelDetails && beat.assignedPersonnelDetails.length > 0 ? (
-                  beat.assignedPersonnelDetails.map((person, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 bg-white rounded border">
+                {(() => {
+                  // Combine existing personnel with newly selected personnel
+                  const existingPersonnel = beat.assignedPersonnelDetails || []
+                  const newlySelectedPersonnel = formData.selectedPersonnel
+                    .map(personnelId => {
+                      const person = editPersonnelData.find(p => p.id === personnelId)
+                      return person ? {
+                        id: person.id,
+                        name: person.name,
+                        rank: person.rank,
+                        email: `${person.name.toLowerCase().replace(' ', '.')}@email.com`,
+                        status: 'pending' as const,
+                        assignmentType: 'original' as const,
+                        assignedAt: new Date().toISOString()
+                      } : null
+                    })
+                    .filter((person): person is NonNullable<typeof person> => person !== null)
+                  
+                  const allPersonnel = [...existingPersonnel, ...newlySelectedPersonnel]
+                  
+                  return allPersonnel.length > 0 ? (
+                    allPersonnel.map((person, index) => (
+                    <div key={index} className={`flex items-center justify-between p-3 rounded border ${
+                      formData.selectedPersonnel.includes(person.id) 
+                        ? 'bg-blue-50 border-blue-200' 
+                        : 'bg-white border-gray-200'
+                    }`}>
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{person.rank} {person.name}</span>
-                          <Badge className={`text-xs ${
-                            person.status === 'accepted' ? 'bg-green-100 text-green-700' :
-                            person.status === 'declined' ? 'bg-red-100 text-red-700' :
-                            'bg-yellow-100 text-yellow-700'
-                          }`}>
-                            {person.status === 'accepted' ? 'Accepted' : 
-                             person.status === 'declined' ? 'Declined' : 'Pending'}
-                          </Badge>
-                          <Badge className={`text-xs ${
-                            person.assignmentType === 'replacement' 
-                              ? 'bg-blue-100 text-blue-700' 
-                              : 'bg-gray-100 text-gray-700'
-                          }`}>
-                            {person.assignmentType === 'replacement' ? 'Replacement' : 'Original'}
-                          </Badge>
+                          <span className="text-sm font-medium">{person.rank} {person.name}</span>
+                          {formData.selectedPersonnel.includes(person.id) && (
+                            <span className="text-xs text-blue-600 font-medium">✨ New</span>
+                          )}
+                          {!formData.selectedPersonnel.includes(person.id) && (
+                            <Badge className={`text-xs ${
+                              person.status === 'accepted' ? 'bg-green-100 text-green-700' :
+                              person.status === 'declined' ? 'bg-red-100 text-red-700' :
+                              'bg-yellow-100 text-yellow-700'
+                            }`}>
+                              {person.status === 'accepted' ? 'Accepted' : 
+                               person.status === 'declined' ? 'Declined' : 'Pending'}
+                            </Badge>
+                          )}
+                          {!formData.selectedPersonnel.includes(person.id) && (
+                            <Badge className={`text-xs ${
+                              person.assignmentType === 'replacement' 
+                                ? 'bg-blue-100 text-blue-700' 
+                                : 'bg-gray-100 text-gray-700'
+                            }`}>
+                              {person.assignmentType === 'replacement' ? 'Replacement' : 'Original'}
+                            </Badge>
+                          )}
                         </div>
                         <div className="text-sm text-gray-500 mt-1">
-                          <p>{person.email}</p>
-                          <p>Assigned: {new Date(person.assignedAt).toLocaleDateString()}</p>
-                          {person.assignmentType === 'replacement' && person.replacementInfo?.reason && (
-                            <p className="text-blue-600">
-                              <span className="font-medium">Replacement reason:</span> {String(person.replacementInfo.reason)}
-                            </p>
+                          <p className="text-sm">{person.email}</p>
+                          {!formData.selectedPersonnel.includes(person.id) && (
+                            <>
+                              <p className="text-xs text-gray-500">Assigned: {new Date(person.assignedAt).toLocaleDateString()}</p>
+                              {person.assignmentType === 'replacement' && person.replacementInfo?.reason && (
+                                <p className="text-xs text-blue-600">
+                                  <span className="font-medium">Replacement reason:</span> {String(person.replacementInfo.reason)}
+                                </p>
+                              )}
+                            </>
+                          )}
+                          {formData.selectedPersonnel.includes(person.id) && (
+                            <p className="text-xs text-blue-600 italic">Will be assigned after saving</p>
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {(person.status === 'declined' || person.status === 'pending') && (
+                      {!formData.selectedPersonnel.includes(person.id) && (
+                        <div className="flex items-center gap-2">
+                          {(person.status === 'declined' || person.status === 'pending') && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                // Set the person to be replaced
+                                setPersonnelToReplace(person)
+                                fetchAvailablePersonnel()
+                                setShowReplacementDialog(true)
+                              }}
+                              className="text-blue-600 hover:text-blue-700"
+                            >
+                              Replace
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRemovePersonnel(person.id)}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      )}
+                      {formData.selectedPersonnel.includes(person.id) && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500 italic">To be assigned</span>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                              // Set the person to be replaced
-                              setPersonnelToReplace(person)
-                              fetchAvailablePersonnel()
-                              setShowReplacementDialog(true)
+                              setFormData({
+                                ...formData,
+                                selectedPersonnel: formData.selectedPersonnel.filter(id => id !== person.id)
+                              })
                             }}
-                            className="text-blue-600 hover:text-blue-700"
+                            className="text-red-600 hover:text-red-700"
                           >
-                            Replace
+                            Remove
                           </Button>
-                        )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleRemovePersonnel(person.id)}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          Remove
-                        </Button>
-                      </div>
+                        </div>
+                      )}
                     </div>
                   ))
                 ) : (
                   <p className="text-gray-500 text-center py-2">No personnel assigned</p>
-                )}
+                )})()}
               </div>
             </div>
-            <div className="text-sm text-gray-600">
-              <p>Note: Personnel assignment changes should be made through the Personnel Management section for proper tracking and notifications.</p>
+
+            {/* Add Personnel Section */}
+            <div className="mt-4">
+              <h4 className="text-sm font-medium text-gray-900 mb-3">Add Personnel</h4>
+              {formData.unit && formData.subUnit ? (
+                <div className="space-y-3">
+                  {/* Search Input */}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Search personnel by name or rank..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                      <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Dropdown Results */}
+                  {searchQuery && (
+                    <div className="border border-gray-200 rounded-md bg-white shadow-sm max-h-48 overflow-y-auto">
+                      {(() => {
+                        const allPersonnel = editPersonnelData
+                        const unitFiltered = allPersonnel.filter(person => person.unit === formData.unit && person.subUnit === formData.subUnit)
+                        const availablePersonnel = unitFiltered.filter(person => !beat.assignedPersonnelDetails?.some(assigned => assigned.id === person.id))
+                        const searchFiltered = availablePersonnel.filter(person => 
+                          person.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          person.rank.toLowerCase().includes(searchQuery.toLowerCase())
+                        )
+                        
+                        return searchFiltered.length > 0 ? (
+                          searchFiltered.map((person) => (
+                            <div 
+                              key={person.id} 
+                              className="flex items-center justify-between p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                              onClick={() => {
+                                if (!formData.selectedPersonnel.includes(person.id)) {
+                                  setFormData({
+                                    ...formData,
+                                    selectedPersonnel: [...formData.selectedPersonnel, person.id]
+                                  })
+                                  setSearchQuery('') // Clear search after selection
+                                }
+                              }}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="flex flex-col">
+                                  <span className="text-sm font-medium">{person.rank} {person.name}</span>
+                                  <span className="text-xs text-gray-500">{person.unit} - {person.subUnit}</span>
+                                </div>
+                              </div>
+                              {!formData.selectedPersonnel.includes(person.id) && (
+                                <button className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                                  Add
+                                </button>
+                              )}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="p-3 text-sm text-gray-500 text-center">
+                            No personnel found matching "{searchQuery}"
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Selected Personnel Count */}
+                  {formData.selectedPersonnel.length > 0 && (
+                    <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-md text-green-800 text-sm">
+                      <span className="font-medium text-green-800">{formData.selectedPersonnel.length}</span> personnel selected to add
+                    </div>
+                  )}
+
+                  {/* Show message when no search */}
+                  {!searchQuery && (
+                    <p className="text-sm text-gray-500 text-center py-2">
+                      Type to search for available personnel in {formData.unit} - {formData.subUnit}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">Please select a unit and sub-unit first to see available personnel</p>
+              )}
             </div>
           </div>
         </div>
@@ -2414,7 +2644,7 @@ function EditBeatDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
-
+      
       {/* Replacement Dialog */}
       {showReplacementDialog && (
         <Dialog open={showReplacementDialog} onOpenChange={setShowReplacementDialog}>
@@ -2495,7 +2725,7 @@ function EditBeatDialog({
       {/* Replacement History Dialog */}
       {showReplacementHistory && (
         <Dialog open={showReplacementHistory} onOpenChange={setShowReplacementHistory}>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogContent className="max-w-lg max-h-[70vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>Personnel Assignment History</DialogTitle>
               <DialogDescription>
@@ -2503,7 +2733,7 @@ function EditBeatDialog({
               </DialogDescription>
             </DialogHeader>
             
-            <div className="space-y-4">
+            <div className="space-y-4 overflow-y-auto flex-1">
               {loadingHistory ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -2566,6 +2796,6 @@ function EditBeatDialog({
           </DialogContent>
         </Dialog>
       )}
-    </Dialog>
+    </>
   )
 }
